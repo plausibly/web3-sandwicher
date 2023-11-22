@@ -13,6 +13,7 @@ interface UniswapInfo {
 }
 
 interface CandidateTx {
+    txFrom: string,
     txGas: string,
     txHash: string, // transaction hash containing the data
     swapInfo: UniswapInfo,
@@ -25,6 +26,7 @@ const routerAbi = new ethers.Interface(UniversalRouter);
 function decodeData(data: string, value: bigint, from: string, hash: string, txgas: string) {
     // Taken from router contract
     const V3_SWAP_EXACT_IN = "00";
+    const V3_SWAP_EXACT_OUT = "01"
     
     const parsed = routerAbi.parseTransaction({ data, value });
     if (!parsed || parsed.name !== "execute") {
@@ -38,8 +40,9 @@ function decodeData(data: string, value: bigint, from: string, hash: string, txg
     const commands: string = parsed.args[0];
     const inputs: string[] = parsed.args[1];
     const deadline: BigInt = parsed.args[2];
+    const isSwapOut = commands.includes(V3_SWAP_EXACT_OUT);
 
-    if (!commands.includes(V3_SWAP_EXACT_IN)) {
+    if (!commands.includes(V3_SWAP_EXACT_IN) && !isSwapOut) {
         // only care if tx is for a swap in
         return;
     }
@@ -63,10 +66,8 @@ function decodeData(data: string, value: bigint, from: string, hash: string, txg
             currentAddress = "";
         }
     }
+    path = !isSwapOut ? path : path.reverse();
 
-    if (path.length !== 2) {
-        return;
-    }
 
     // recipient is a constant defined in Constants.sol (universalrouter github)
     let recipient = decoded[0];
@@ -77,6 +78,7 @@ function decodeData(data: string, value: bigint, from: string, hash: string, txg
     }
 
     const swapData: CandidateTx = {
+        txFrom: from,
         txGas: txgas,
         txHash: hash,
         swapInfo: {
@@ -99,11 +101,9 @@ async function listenTransactions() {
         }
     });
 
-
     subscription.on("data", async (tx) => {
         try {
             const rawTxData = await web3.eth.getTransaction(tx);
-            // console.log(rawTxData)
             if (rawTxData.to && rawTxData.to.toLowerCase() === UNISWAPROUTER.toLowerCase()) {
                 const uniswapInfo = decodeData(rawTxData.input, BigInt(rawTxData.value), rawTxData.from, tx, rawTxData.gas);
                 if (uniswapInfo) {
