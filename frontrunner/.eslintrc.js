@@ -105,7 +105,7 @@ module.exports = {
             }
         ],
         "@typescript-eslint/no-this-alias": "error",
-        "@typescript-eslint/no-unused-expressions": "error",
+        "@typescript-eslint/no-unused-expressions": "off",
         "@typescript-eslint/no-use-before-define": "off",
         "@typescript-eslint/no-var-requires": "error",
         "@typescript-eslint/prefer-for-of": "error",
@@ -180,7 +180,7 @@ module.exports = {
         "no-underscore-dangle": "off",
         "no-unsafe-finally": "error",
         "no-unused-expressions": "off",
-        "no-unused-labels": "error",
+        "no-unused-labels": "off",
         "no-use-before-define": "off",
         "no-var": "error",
         "object-shorthand": "error",
