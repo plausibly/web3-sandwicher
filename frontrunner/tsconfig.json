@@ -4,7 +4,8 @@
 		"module": "commonjs",
 		"moduleResolution": "node",
 		"lib": [
-			"ES2016"
+			"ES2016",
+			"dom"
 		],
 
 		"rootDir": "src",
@@ -15,7 +16,8 @@
 		"strictFunctionTypes": true,
 		"strictNullChecks": true,
 		"strictPropertyInitialization": true,
-
+		"esModuleInterop": true, 
+		"allowSyntheticDefaultImports": true,
 		"forceConsistentCasingInFileNames": true,
 		"noImplicitAny": true,
 		"noImplicitReturns": true,
