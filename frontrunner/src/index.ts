@@ -20,7 +20,7 @@ interface CandidateTx {
     deadline: BigInt
 }
 
-const web3 = new Web3(`wss://eth-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`);
+const web3 = new Web3(process.env.ALCHEMY_WS_URL);
 const routerAbi = new ethers.Interface(UniversalRouter);
 
 function decodeData(data: string, value: bigint, from: string, hash: string, txgas: string) {
