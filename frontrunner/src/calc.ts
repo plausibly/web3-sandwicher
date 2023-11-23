@@ -1,16 +1,17 @@
-import { ethers } from "ethers";
+import { ethers, toNumber } from "ethers";
 const {
   abi: QuoterV2ABI,
-} = require("@uniswap/v3-periphery/artifacts/contracts/lens/QuoterV2.sol/QuoterV2.json");
+} = require("@uniswap/swap-router-contracts/artifacts/contracts/lens/QuoterV2.sol/QuoterV2.json");
 const {
   abi: PoolABI,
-} = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json");
+} = require("@uniswap/v3-core/artifacts/contracts//UniswapV3Pool.sol/UniswapV3Pool.json");
 const {
   abi: FactoryABI,
 } = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json");
 
-const QUOTER2_ADDRESS = "0x61fFE014bA17989E743c5F6cB21bF9697530B21e";
-const FACTORY_ADDRESS = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
+import JSBI from "jsbi";
+
+import { QUOTER2_ADDRESS, FACTORY_ADDRESS } from "./config/info";
 
 /**
  *
@@ -20,10 +21,10 @@ const FACTORY_ADDRESS = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
  * @param provider Ethers provider
  * @returns
  */
-async function getPoolAddress(
+export async function getPoolAddress(
   tokenIn: string,
   tokenOut: string,
-  fee: number,
+  fee: ethers.BigNumberish,
   provider: ethers.Provider
 ): Promise<any> {
   const factoryContract = new ethers.Contract(
@@ -36,42 +37,48 @@ async function getPoolAddress(
   return poolAddress;
 }
 
-function Q96toPrice(q96: number, decimals0: number, decimals1: number): number {
-  const numerator = q96 ** 2;
-  const denominator = 2 ** 96;
-  const decimalsToShift = Math.pow(10, decimals0 - decimals1);
-  let ratio = (numerator / denominator) * decimalsToShift;
-  return ratio;
+function Q96toPrice(q96: bigint, decimals0: bigint, decimals1: bigint): number {
+  let mathPrice = Number(q96) ** 2 / 2 ** 192;
+  const decimalAdjustment = 10 ** (Number(decimals0) - Number(decimals1));
+  const price = mathPrice * decimalAdjustment;
+  return price;
 }
 
 /**
+ * Calculates the price impact of a token swap in a given Uniswap v3 pool.
  *
- * @param tokenInContract Ethers contract of token to be swapped
- * @param tokenOutContract Ethers contract of token to be received
- * @param fee Fee tier of the pool
- * @param poolAddress Address of the pool
- * @param amountIn Amount of tokenIn to be swapped
+ * @param tokenInContract Ethers contract of the token to be swapped.
+ * @param tokenOutContract Ethers contract of the token to be received.
+ * @param fee Fee tier of the pool.
+ * @param amountIn Amount of tokenIn to be swapped.
+ * @param poolAddress Address of the Uniswap v3 pool.
+ * @param provider Ethers provider for interacting with the Ethereum network.
+ * @returns An object containing the price before and after the swap Price for 1 tokenIn in tokenOut.
  */
-async function getPriceImpactBySwap(
+export async function getPriceImpactBySwap(
   tokenInContract: ethers.Contract,
   tokenOutContract: ethers.Contract,
-  fee: number,
-  amountIn: number,
+  fee: ethers.BigNumberish,
+  amountIn: ethers.BigNumberish,
   poolAddress: string,
   provider: ethers.Provider
 ): Promise<any> {
-  const factoryContract = new ethers.Contract(
-    FACTORY_ADDRESS,
-    FactoryABI,
+  // Instantiate the QuoterV2 contract for quoting swap information
+  const quoterContract = new ethers.Contract(
+    QUOTER2_ADDRESS,
+    QuoterV2ABI,
     provider
   );
 
+  // Instantiate the Uniswap v3 pool contract
   const poolContract = new ethers.Contract(poolAddress, PoolABI, provider);
+
+  // Retrieve the current sqrtPriceX96 from the Uniswap v3 pool
   const slot0 = await poolContract.slot0();
   const currentSqrtPriceX96 = slot0.sqrtPriceX96;
 
+  // Determine which token is token0 and get its decimals
   const token0 = await poolContract.token0();
-
   const isInputToken0 = token0 === tokenInContract.target;
 
   const decimals0 = isInputToken0
@@ -81,31 +88,28 @@ async function getPriceImpactBySwap(
     ? await tokenOutContract.decimals()
     : await tokenInContract.decimals();
 
-  const quoterContract = new ethers.Contract(
-    QUOTER2_ADDRESS,
-    QuoterV2ABI,
-    provider
-  );
-  const quote = await quoterContract.quoteExactInputSingle.staticCall(
-    tokenInContract.target,
-    tokenOutContract.target,
+  const params = {
+    tokenIn: tokenInContract.target,
+    tokenOut: tokenOutContract.target,
     fee,
     amountIn,
-    0
-  );
+    sqrtPriceLimitX96: "0",
+  };
+
+  // Simulate the swap to get the post-swap sqrtPriceX96
+  const quote = await quoterContract.quoteExactInputSingle.staticCall(params);
   const sqrtPriceX96AfterSwap = quote.sqrtPriceX96After;
 
+  // Convert the current and post-swap prices from Q96 to a human-readable format
   let currentPrice = Q96toPrice(currentSqrtPriceX96, decimals0, decimals1);
+  let priceAfterSwap = Q96toPrice(sqrtPriceX96AfterSwap, decimals0, decimals1);
 
-  let priceAfterSwap = Q96toPrice(
-    sqrtPriceX96AfterSwap,
-    decimals0,
-    decimals1
-  );
+  // Adjust prices if the input token is not token0
   if (!isInputToken0) {
     currentPrice = 1 / currentPrice;
     priceAfterSwap = 1 / priceAfterSwap;
   }
-  
-  return {priceBeforeSwap: currentPrice, priceAfterSwap: priceAfterSwap};
+
+  // Return the prices before and after the swap
+  return { priceBeforeSwap: currentPrice, priceAfterSwap: priceAfterSwap };
 }
