@@ -3,12 +3,24 @@ import { Web3 } from 'web3';
 import { UNISWAPROUTER } from "./config/info";
 import { ethers } from "ethers";
 import UniversalRouter from "./contracts/UniversalRouter.json"
-
-interface UniswapInfo {
+  
+/* V3_SWAP_EXACT_IN Transaction. */
+interface UniswapInfo_SwapIn {
     recipient: string, // recipient of the trade (NOT always the transaction sender)
     amountIn: BigInt, // will need to be formatted into decimals based on token type
     amountOutMin: BigInt,
     path: string[], // contains the token contracts being swapped
+    fees: BigInt[],
+    payerIsUser: boolean,
+}
+
+/* V3_SWAP_EXACT_OUT Transaction. */
+interface UniswapInfo_SwapOut {
+    recipient: string,
+    amountOut: BigInt,
+    amountInMax: BigInt,
+    path: string[],
+    fees: BigInt[],
     payerIsUser: boolean,
 }
 
@@ -16,26 +28,27 @@ interface CandidateTx {
     txFrom: string,
     txGas: string,
     txHash: string, // transaction hash containing the data
-    swapInfo: UniswapInfo,
+    swapInfo: UniswapInfo_SwapIn | UniswapInfo_SwapOut,
     deadline: BigInt
 }
 
 const web3 = new Web3(process.env.ALCHEMY_WS_URL);
 const routerAbi = new ethers.Interface(UniversalRouter);
 
+/**
+ * Decodes function call into the UniversalRouter contract and outputs human readable object
+ * containing swap details.
+ **/
 function decodeData(data: string, value: bigint, from: string, hash: string, txgas: string) {
     // Taken from router contract
     const V3_SWAP_EXACT_IN = "00";
     const V3_SWAP_EXACT_OUT = "01"
     
     const parsed = routerAbi.parseTransaction({ data, value });
-    if (!parsed || parsed.name !== "execute") {
+    if (!parsed || parsed.name !== "execute" || parsed.args.length !== 3) {
         return;
     }
 
-     if (parsed.args.length !== 3) {
-        return;
-     }
     // args: commands, inputs, deadline
     const commands: string = parsed.args[0];
     const inputs: string[] = parsed.args[1];
@@ -55,18 +68,24 @@ function decodeData(data: string, value: bigint, from: string, hash: string, txg
 
     // Decode path (tokens being swapped)
     // https://ethereum.stackexchange.com/questions/144478/uniswap-universal-router-decoding-the-execute-function-parameters
-    const fullPathWithoutHexSymbol = decoded[3].substring(2);
+    const rawPath = decoded[3].substring(2);
     let path = [];
+    let fees = [];
     let currentAddress = "";
-    for (let i = 0; i < fullPathWithoutHexSymbol.length; i++) {
-        currentAddress += fullPathWithoutHexSymbol[i];
+    // <addr1><fees><addr2>...
+    for (let i = 0; i < rawPath.length; i++) {
+        currentAddress += rawPath[i];
         if (currentAddress.length === 40) {
-            path.push('0x' + currentAddress);
-            i = i + 6;
+            path.push("0x" + currentAddress);
+            if (i+1 < rawPath.length && i+6 < rawPath.length) {
+                fees.push(BigInt("0x" + rawPath.slice(i+1, i+7)));
+            }
+            i += 6; // skip fees bytes to only get token addresses
             currentAddress = "";
         }
     }
     path = !isSwapOut ? path : path.reverse();
+    fees = !isSwapOut ? fees : fees.reverse();
 
 
     // recipient is a constant defined in Constants.sol (universalrouter github)
@@ -77,22 +96,36 @@ function decodeData(data: string, value: bigint, from: string, hash: string, txg
         recipient = from;
     }
 
-    const swapData: CandidateTx = {
-        txFrom: from,
-        txGas: txgas,
-        txHash: hash,
-        swapInfo: {
+    let swapInfo: UniswapInfo_SwapIn | UniswapInfo_SwapOut;
+    console.log("Raw path " + decoded[3]);
+    if (!isSwapOut) {
+       swapInfo = {
             recipient,
             amountIn: decoded[1],
             amountOutMin: decoded[2],
             path,
             payerIsUser: decoded[4],
-        },
-        deadline: deadline, 
+            fees: fees,
+        }
+    } else {
+        swapInfo = {
+            recipient,
+            amountOut: decoded[1],
+            amountInMax: decoded[2],
+            path,
+            payerIsUser: decoded[4],
+            fees: fees
+        }
     }
-    return swapData;
-}
 
+    return {
+        txFrom: from,
+        txGas: txgas,
+        txHash: hash,
+        swapInfo: swapInfo,
+        deadline: deadline, 
+    };
+}
 
 async function listenTransactions() {
     const subscription = await web3.eth.subscribe("pendingTransactions", (err: any, res: any) => {
