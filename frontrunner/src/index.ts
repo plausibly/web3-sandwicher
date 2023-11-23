@@ -67,23 +67,21 @@ function decodeData(data: string, value: bigint, from: string, hash: string, txg
     const decoded = abiDecode.decode(["address", "uint256", "uint256", "bytes", "bool"], input);
 
     // Decode path (tokens being swapped)
-    // https://ethereum.stackexchange.com/questions/144478/uniswap-universal-router-decoding-the-execute-function-parameters
     const rawPath = decoded[3].substring(2);
     let path = [];
     let fees = [];
-    let currentAddress = "";
-    // <addr1><fees><addr2>...
-    for (let i = 0; i < rawPath.length; i++) {
-        currentAddress += rawPath[i];
-        if (currentAddress.length === 40) {
-            path.push("0x" + currentAddress);
-            if (i+1 < rawPath.length && i+6 < rawPath.length) {
-                fees.push(BigInt("0x" + rawPath.slice(i+1, i+7)));
-            }
-            i += 6; // skip fees bytes to only get token addresses
-            currentAddress = "";
+    // <addr1><fee><addr2>...
+    let i = 0;
+    while (i < rawPath.length) {
+        path.push(`0x${rawPath.slice(i, i + 40)}`);
+        i += 40;
+
+        if (i + 6 < rawPath.length) {
+            fees.push(BigInt(`0x${rawPath.slice(i, i+6)}`));
+            i += 6;
         }
     }
+
     path = !isSwapOut ? path : path.reverse();
     fees = !isSwapOut ? fees : fees.reverse();
 
