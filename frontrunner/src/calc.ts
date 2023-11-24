@@ -9,8 +9,6 @@ const {
   abi: FactoryABI,
 } = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json");
 
-import JSBI from "jsbi";
-
 import { QUOTER2_ADDRESS, FACTORY_ADDRESS } from "./config/info";
 
 /**
@@ -69,14 +67,14 @@ export async function getPriceImpactBySwap(
     QuoterV2ABI,
     provider
   );
-
+  
   // Instantiate the Uniswap v3 pool contract
   const poolContract = new ethers.Contract(poolAddress, PoolABI, provider);
 
   // Retrieve the current sqrtPriceX96 from the Uniswap v3 pool
   const slot0 = await poolContract.slot0();
   const currentSqrtPriceX96 = slot0.sqrtPriceX96;
-
+  
   // Determine which token is token0 and get its decimals
   const token0 = await poolContract.token0();
   const isInputToken0 = token0 === tokenInContract.target;
@@ -88,7 +86,7 @@ export async function getPriceImpactBySwap(
     ? await tokenOutContract.decimals()
     : await tokenInContract.decimals();
 
-  const params = {
+    const params = {
     tokenIn: tokenInContract.target,
     tokenOut: tokenOutContract.target,
     fee,
@@ -98,15 +96,15 @@ export async function getPriceImpactBySwap(
 
   // Simulate the swap to get the post-swap sqrtPriceX96
   const quote = await quoterContract.quoteExactInputSingle.staticCall(params);
-  const sqrtPriceX96AfterSwap = quote.sqrtPriceX96After;
+    const sqrtPriceX96AfterSwap = quote.sqrtPriceX96After;
 
   // Convert the current and post-swap prices from Q96 to a human-readable format
   let currentPrice = Q96toPrice(currentSqrtPriceX96, decimals0, decimals1);
-  let priceAfterSwap = Q96toPrice(sqrtPriceX96AfterSwap, decimals0, decimals1);
+    let priceAfterSwap = Q96toPrice(sqrtPriceX96AfterSwap, decimals0, decimals1);
 
   // Adjust prices if the input token is not token0
   if (!isInputToken0) {
-    currentPrice = 1 / currentPrice;
+        currentPrice = 1 / currentPrice;
     priceAfterSwap = 1 / priceAfterSwap;
   }
 

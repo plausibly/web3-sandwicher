@@ -189,7 +189,7 @@ async function test() {
     WETH_CONTRACT,
     AUC_CONTRACT,
     10000,
-    ethers.parseEther("0.1"),
+    ethers.parseEther("1"),
     poolAddress,
     provider
   );
