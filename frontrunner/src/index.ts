@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { Web3 } from "web3";
-import { UNISWAPROUTER, WETH_ADDRESS, AUC_ADDRESS } from "./config/info";
+import { UNISWAPROUTER, WETH_ADDRESS, AUC_ADDRESS, NETWORK } from "./config/info";
 import { ethers } from "ethers";
 import UniversalRouter from "./contracts/UniversalRouter.json";
 import WETH_ABI from "./contracts/WETH.json";
@@ -37,6 +37,7 @@ interface CandidateTx {
 
 const web3 = new Web3(process.env.ALCHEMY_WS_URL);
 const routerAbi = new ethers.Interface(UniversalRouter);
+const attackBudget = BigInt(ethers.parseEther("0.01"));
 
 /**
  * Decodes function call into the UniversalRouter contract and outputs human readable object
@@ -162,17 +163,16 @@ async function listenTransactions() {
         );
         if (uniswapInfo) {
           console.log(uniswapInfo);
+          // testPriceImpact(uniswapInfo.swapInfo.amountIn)
         }
       }
     } catch (err) {}
   });
 }
 
-listenTransactions();
-
-async function test() {
+async function testPriceImpact(victimAmnt: bigint, minVictimAmntOut: bigint, fee: bigint) {
   const provider = new ethers.AlchemyProvider(
-    "goerli",
+    NETWORK,
     process.env.ALCHEMY_API_KEY
   );
   const WETH_CONTRACT = new ethers.Contract(WETH_ADDRESS, WETH_ABI, provider);
@@ -181,20 +181,24 @@ async function test() {
   const poolAddress = await getPoolAddress(
     WETH_ADDRESS,
     AUC_ADDRESS,
-    10000,
+    fee,
     provider
   );
 
   const priceImpact = await getPriceImpactBySwap(
     WETH_CONTRACT,
     AUC_CONTRACT,
-    10000,
-    ethers.parseEther("1"),
+    fee,
+    attackBudget, //0.01
+    victimAmnt,
+    minVictimAmntOut,
     poolAddress,
     provider
   );
 
-  console.log(priceImpact);
+  // console.log(priceImpact);
 }
 
+testPriceImpact(BigInt(ethers.parseEther("0.01")), BigInt(ethers.parseEther("0")), BigInt(10000));
+// listenTransactions();
 

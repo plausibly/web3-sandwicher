@@ -1,4 +1,14 @@
 import { ethers, toNumber } from "ethers";
+
+interface QuoteParams {
+  tokenIn: ethers.Contract;
+  tokenOut: ethers.Contract;
+  fee: bigint;
+  amountIn: bigint;
+  poolAddress: string;
+  provider: ethers.Provider;
+}
+
 const {
   abi: QuoterV2ABI,
 } = require("@uniswap/swap-router-contracts/artifacts/contracts/lens/QuoterV2.sol/QuoterV2.json");
@@ -42,6 +52,51 @@ function Q96toPrice(q96: bigint, decimals0: bigint, decimals1: bigint): number {
   return price;
 }
 
+async function getQuote(data: QuoteParams) {
+  // Instantiate the QuoterV2 contract for quoting swap information
+  const quoterContract = new ethers.Contract(
+    QUOTER2_ADDRESS,
+    QuoterV2ABI,
+    data.provider
+  );
+
+  // Instantiate the Uniswap v3 pool contract
+  const poolContract = new ethers.Contract(
+    data.poolAddress,
+    PoolABI,
+    data.provider
+  );
+
+  // Determine which token is token0 and get its decimals
+  const token0 = await poolContract.token0();
+
+  const isInputToken0 = token0 === data.tokenIn.target;
+
+  const decimals0 = isInputToken0
+    ? await data.tokenIn.decimals()
+    : await data.tokenOut.decimals();
+  const decimals1 = isInputToken0
+    ? await data.tokenOut.decimals()
+    : await data.tokenIn.decimals();
+
+  const params = {
+    tokenIn: data.tokenIn.target,
+    tokenOut: data.tokenOut.target,
+    fee: data.fee,
+    amountIn: data.amountIn,
+    sqrtPriceLimitX96: "0",
+  };
+
+  const quoteB = await quoterContract.quoteExactInputSingle.staticCall(params);
+  let retVal;
+  if (isInputToken0) {
+    retVal = ethers.formatUnits(quoteB.amountOut, decimals1);
+  } else {
+    retVal = ethers.formatUnits(quoteB.amountOut, decimals0);
+  }
+  return Number(retVal);
+}
+
 /**
  * Calculates the price impact of a token swap in a given Uniswap v3 pool.
  *
@@ -56,58 +111,37 @@ function Q96toPrice(q96: bigint, decimals0: bigint, decimals1: bigint): number {
 export async function getPriceImpactBySwap(
   tokenInContract: ethers.Contract,
   tokenOutContract: ethers.Contract,
-  fee: ethers.BigNumberish,
-  amountIn: ethers.BigNumberish,
+  fee: bigint,
+  amountIn: bigint,
+  victimAmnt: bigint,
+  minVictimAmntOut: bigint,
   poolAddress: string,
   provider: ethers.Provider
-): Promise<any> {
-  // Instantiate the QuoterV2 contract for quoting swap information
-  const quoterContract = new ethers.Contract(
-    QUOTER2_ADDRESS,
-    QuoterV2ABI,
-    provider
-  );
-  
-  // Instantiate the Uniswap v3 pool contract
-  const poolContract = new ethers.Contract(poolAddress, PoolABI, provider);
-
-  // Retrieve the current sqrtPriceX96 from the Uniswap v3 pool
-  const slot0 = await poolContract.slot0();
-  const currentSqrtPriceX96 = slot0.sqrtPriceX96;
-  
-  // Determine which token is token0 and get its decimals
-  const token0 = await poolContract.token0();
-  const isInputToken0 = token0 === tokenInContract.target;
-
-  const decimals0 = isInputToken0
-    ? await tokenInContract.decimals()
-    : await tokenOutContract.decimals();
-  const decimals1 = isInputToken0
-    ? await tokenOutContract.decimals()
-    : await tokenInContract.decimals();
-
-    const params = {
-    tokenIn: tokenInContract.target,
-    tokenOut: tokenOutContract.target,
+) {
+  let params: QuoteParams = {
+    tokenIn: tokenInContract,
+    tokenOut: tokenOutContract,
     fee,
     amountIn,
-    sqrtPriceLimitX96: "0",
+    poolAddress,
+    provider,
   };
 
-  // Simulate the swap to get the post-swap sqrtPriceX96
-  const quote = await quoterContract.quoteExactInputSingle.staticCall(params);
-    const sqrtPriceX96AfterSwap = quote.sqrtPriceX96After;
+  // Amount out if we swap only our amtIn
+  const quoteA = await getQuote(params);
+  console.log("Amount out if we swap only our amtIn", quoteA);
 
-  // Convert the current and post-swap prices from Q96 to a human-readable format
-  let currentPrice = Q96toPrice(currentSqrtPriceX96, decimals0, decimals1);
-    let priceAfterSwap = Q96toPrice(sqrtPriceX96AfterSwap, decimals0, decimals1);
+  params.amountIn += victimAmnt;
+  // Amount out if we swap with our amtIn and victimAmntIn
+  const quoteB = await getQuote(params);
+  console.log("Amount out if we swap with our amtIn and victimAmntIn", quoteB);
 
-  // Adjust prices if the input token is not token0
-  if (!isInputToken0) {
-        currentPrice = 1 / currentPrice;
-    priceAfterSwap = 1 / priceAfterSwap;
+  // Amount out if victim swaps only their amtIn AFTER our swap
+  const diff = quoteB - quoteA;
+  console.log("Amount out if victim swaps only their amtIn AFTER our swap", diff);
+
+  if(diff < minVictimAmntOut) {
+    console.log("Amount out for victim is less than minVictimAmntOut, abort attack"); 
+    return;
   }
-
-  // Return the prices before and after the swap
-  return { priceBeforeSwap: currentPrice, priceAfterSwap: priceAfterSwap };
 }

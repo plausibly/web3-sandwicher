@@ -1,4 +1,4 @@
-export const NETWORK = "sepolia";
+export const NETWORK = "goerli";
 export const UNISWAPROUTER = "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD";
 
 export const QUOTER2_ADDRESS = "0x61fFE014bA17989E743c5F6cB21bF9697530B21e";
