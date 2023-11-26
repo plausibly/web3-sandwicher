@@ -37,7 +37,7 @@ interface CandidateTx {
 
 const web3 = new Web3(process.env.ALCHEMY_WS_URL);
 const routerAbi = new ethers.Interface(UniversalRouter);
-const attackBudget = BigInt(ethers.parseEther("0.01"));
+const attackBudgetIn = "0.01";
 
 /**
  * Decodes function call into the UniversalRouter contract and outputs human readable object
@@ -170,7 +170,7 @@ async function listenTransactions() {
   });
 }
 
-async function testPriceImpact(victimAmnt: bigint, minVictimAmntOut: bigint, fee: bigint) {
+async function testPriceImpact(victimAmntIn: string, minVictimAmntOut: string, fee: bigint) {
   const provider = new ethers.AlchemyProvider(
     NETWORK,
     process.env.ALCHEMY_API_KEY
@@ -189,8 +189,8 @@ async function testPriceImpact(victimAmnt: bigint, minVictimAmntOut: bigint, fee
     WETH_CONTRACT,
     AUC_CONTRACT,
     fee,
-    attackBudget, //0.01
-    victimAmnt,
+    attackBudgetIn,
+    victimAmntIn,
     minVictimAmntOut,
     poolAddress,
     provider
@@ -199,6 +199,6 @@ async function testPriceImpact(victimAmnt: bigint, minVictimAmntOut: bigint, fee
   // console.log(priceImpact);
 }
 
-testPriceImpact(BigInt(ethers.parseEther("0.01")), BigInt(ethers.parseEther("0")), BigInt(10000));
+testPriceImpact("0.01", "0", BigInt(10000));
 // listenTransactions();
 
