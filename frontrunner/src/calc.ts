@@ -81,13 +81,6 @@ async function quoteExactInputSingle(data: QuoteExactInputSingleParams) {
 
   const isInputToken0 = token0 === data.tokenIn.target;
 
-  const decimals0 = isInputToken0
-    ? await data.tokenIn.decimals()
-    : await data.tokenOut.decimals();
-  const decimals1 = isInputToken0
-    ? await data.tokenOut.decimals()
-    : await data.tokenIn.decimals();
-
   const params = {
     tokenIn: data.tokenIn.target,
     tokenOut: data.tokenOut.target,
@@ -99,7 +92,7 @@ async function quoteExactInputSingle(data: QuoteExactInputSingleParams) {
   const quote = await quoterContract.quoteExactInputSingle.staticCall(params);
   let retVal = quote.amountOut;
   if (!isInputToken0) {
-    retVal = 1 / retVal;
+    retVal = BigInt(1) / retVal;
   }
   return retVal;
 }
@@ -124,13 +117,6 @@ async function quoteExactOutputSingle(data: QuoteExactOutputSingleParams) {
 
   const isInputToken0 = token0 === data.tokenIn.target;
 
-  const decimals0 = isInputToken0
-    ? await data.tokenIn.decimals()
-    : await data.tokenOut.decimals();
-  const decimals1 = isInputToken0
-    ? await data.tokenOut.decimals()
-    : await data.tokenIn.decimals();
-
   const params = {
     tokenIn: data.tokenIn.target,
     tokenOut: data.tokenOut.target,
@@ -142,7 +128,7 @@ async function quoteExactOutputSingle(data: QuoteExactOutputSingleParams) {
   const quoteB = await quoterContract.quoteExactOutputSingle.staticCall(params);
   let retVal = quoteB.amountIn;
   if (!isInputToken0) {
-    retVal = 1 / retVal;
+    retVal = BigInt(1) / retVal;
   }
   return retVal;
 }
@@ -221,7 +207,7 @@ export async function getPriceImpactBySwap(
     )} AFTER our swap: `,
     ethers.formatUnits(deltaY_BC, decimalsOut)
   );
-
+  // todo this might not work since parseUnits can be a bigint
   if (deltaY_BC < ethers.parseUnits(minVictimAmntOut, decimalsOut)) {
     console.log(
       "Amount out for victim is less than minVictimAmntOut, abort attack"
@@ -234,7 +220,7 @@ export async function getPriceImpactBySwap(
     ...params,
     amountOut: BigInt(deltaY_AD),
   });
-
+  
   const deltaX_CD = deltaX_AC - deltaX_AD;
   console.log(
     `We will get ${ethers.formatUnits(

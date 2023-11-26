@@ -3,7 +3,7 @@ import { Web3 } from "web3";
 import { UNISWAPROUTER, WETH_ADDRESS, AUC_ADDRESS, NETWORK } from "./config/info";
 import { ethers } from "ethers";
 import UniversalRouter from "./contracts/UniversalRouter.json";
-import WETH_ABI from "./contracts/WETH.json";
+import WETH_ABI from "./contracts/weth.json";
 import AUC_ABI from "./contracts/erc20.json";
 import { getPoolAddress, getPriceImpactBySwap } from "./calc";
 
