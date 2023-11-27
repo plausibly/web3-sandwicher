@@ -1,4 +1,20 @@
 import { ethers, toNumber } from "ethers";
+const {
+  abi: QuoterV2ABI,
+} = require("@uniswap/swap-router-contracts/artifacts/contracts/lens/QuoterV2.sol/QuoterV2.json");
+const {
+  abi: PoolABI,
+} = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json");
+const {
+  abi: FactoryABI,
+} = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json");
+
+import { TickMath, SwapMath, TickListDataProvider, Tick, FeeAmount } from "@uniswap/v3-sdk";
+import JSBI from 'jsbi';
+import TickLensABI from "./contracts/ticklens.json";
+ 
+
+import { QUOTER2_ADDRESS, FACTORY_ADDRESS, TICKLENS_ADDRESS } from "./config/info";
 
 interface QuoteExactInputSingleParams {
   tokenIn: ethers.Contract;
@@ -17,18 +33,6 @@ interface QuoteExactOutputSingleParams {
   poolAddress: string;
   provider: ethers.Provider;
 }
-
-const {
-  abi: QuoterV2ABI,
-} = require("@uniswap/swap-router-contracts/artifacts/contracts/lens/QuoterV2.sol/QuoterV2.json");
-const {
-  abi: PoolABI,
-} = require("@uniswap/v3-core/artifacts/contracts//UniswapV3Pool.sol/UniswapV3Pool.json");
-const {
-  abi: FactoryABI,
-} = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json");
-
-import { QUOTER2_ADDRESS, FACTORY_ADDRESS } from "./config/info";
 
 /**
  *
@@ -79,7 +83,7 @@ async function quoteExactInputSingle(data: QuoteExactInputSingleParams) {
   // Determine which token is token0 and get its decimals
   const token0 = await poolContract.token0();
 
-  const isInputToken0 = token0 === data.tokenIn.target;
+  // const isInputToken0 = token0 === data.tokenIn.target;
 
   const params = {
     tokenIn: data.tokenIn.target,
@@ -91,10 +95,11 @@ async function quoteExactInputSingle(data: QuoteExactInputSingleParams) {
 
   const quote = await quoterContract.quoteExactInputSingle.staticCall(params);
   let retVal = quote.amountOut;
-  if (!isInputToken0) {
-    retVal = BigInt(1) / retVal;
-  }
-  return retVal;
+  // if (!isInputToken0) {
+  //   retVal = retVal;
+  // }
+
+  return { retVal, ticksCrossed: quote[2], sqrtPriceAfter: Number(quote[1])};
 }
 
 async function quoteExactOutputSingle(data: QuoteExactOutputSingleParams) {
@@ -170,28 +175,18 @@ export async function getPriceImpactBySwap(
   };
 
   // Amount out if we swap only our amtIn
-  const deltaY_AB = await quoteExactInputSingle(params);
+  const raw = await quoteExactInputSingle(params);
+  const deltaY_AB = raw.retVal;
   console.log(
     `Amount out if we swap only our amtIn ${amountIn}: `,
     ethers.formatUnits(deltaY_AB, decimalsOut)
   );
 
-  const test = await quoteExactOutputSingle({
-    ...params,
-    amountOut: deltaY_AB,
-  });
-
-  console.log(
-    `Amount we need in if we expect ${ethers.formatUnits(
-      deltaY_AB,
-      decimalsOut
-    )} out: `,
-    ethers.formatUnits(test, decimalsIn)
-  );
   const deltaX_AC = deltaX_AB + deltaX_BC;
   params.amountIn = deltaX_AC;
   // Amount out if we swap with our amtIn and victimAmntIn
-  const deltaY_AC = await quoteExactInputSingle(params);
+  const raw2 = await quoteExactInputSingle(params);
+  const deltaY_AC = raw2.retVal;
   console.log(
     `Amount out if we swap with our amtIn and victimAmntIn ${
       Number(victimAmntIn) + Number(amountIn)
@@ -215,20 +210,73 @@ export async function getPriceImpactBySwap(
     return;
   }
 
-  const deltaY_AD = deltaY_BC;
-  const deltaX_AD = await quoteExactOutputSingle({
-    ...params,
-    amountOut: BigInt(deltaY_AD),
-  });
-  
-  const deltaX_CD = deltaX_AC - deltaX_AD;
-  console.log(
-    `We will get ${ethers.formatUnits(
-      deltaX_CD,
-      decimalsIn
-    )} tokenIn back after we swap ${ethers.formatUnits(
-      deltaY_AC,
-      decimalsOut
-    )} out `
+
+  // todo cleanup code
+ // swappingEstimator(poolAddress, provider, deltaX_AB, raw2.sqrtPriceAfter);
+ 
+
+}
+
+export async function swappingEstimator(poolAddress: string, provider: ethers.Provider, sellAmt: bigint, sqrtPriceX96: number) {
+  const poolContract = new ethers.Contract(
+    poolAddress,
+    PoolABI,
+    provider
   );
+  const lensContract = new ethers.Contract(
+    TICKLENS_ADDRESS,
+    TickLensABI,
+    provider
+  );
+  const slot0 = await poolContract.slot0();
+  console.log(poolAddress)
+  const rawTicks = await lensContract.getPopulatedTicksInWord(poolAddress, 1);
+  const allTicks: Tick[] = [];
+
+  // rawTicks is returned in reverse sort, need to sort and format it
+  for (let i = rawTicks.length - 1; i >= 0; i--) {
+    let f = rawTicks[i];
+    allTicks.push(
+      {
+        index: Number(f[0]),
+        liquidityGross: JSBI.BigInt(Number(f[2])),
+        liquidityNet: JSBI.BigInt(Number(f[1]))
+      });
+  }
+
+  const currSqrtPricex96 = JSBI.BigInt(sqrtPriceX96);
+  let currTick = TickMath.getTickAtSqrtRatio(JSBI.BigInt(currSqrtPricex96));
+  const tickSpace = Number(await poolContract.tickSpacing());
+
+  const tickProvider = new TickListDataProvider(allTicks, tickSpace);
+
+  // Given sellAmt and the "current" tick, compute
+
+  let amntRemain = sellAmt;
+  const liquidity = 0; // ????
+
+  //TODO cehck zeroforone
+  const fee = JSBI.BigInt(Number(await poolContract.feeGrowthGlobal0X128()));
+
+  while (amntRemain > 0) {
+    let amntCalculated = 0;
+    let [ tickNext, initialied ] = await tickProvider.nextInitializedTickWithinOneWord(currTick, true, tickSpace);
+
+    if (tickNext < TickMath.MIN_TICK) {
+      tickNext = TickMath.MIN_TICK;
+    } else if (tickNext > TickMath.MAX_TICK) {
+        tickNext = TickMath.MAX_TICK;
+    }
+
+    const sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(tickNext);
+
+    //TODO FEE??
+    const [ stateSqrtPricex96, stepAmntin, stepAmntOut, stepFeeAmnt ] = SwapMath.computeSwapStep(currSqrtPricex96, sqrtPriceNextX96, liquidity, JSBI.BigInt(Number(amntRemain)), FeeAmount.LOW);
+
+    amntRemain -= (JSBI.ADD(stepAmntin, stepFeeAmnt));
+
+
+  }
+
+  
 }
