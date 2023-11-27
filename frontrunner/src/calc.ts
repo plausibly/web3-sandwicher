@@ -9,7 +9,7 @@ const {
   abi: FactoryABI,
 } = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json");
 
-import { TickMath, SwapMath, TickListDataProvider, Tick, FeeAmount } from "@uniswap/v3-sdk";
+import { TickMath, SwapMath, TickListDataProvider, Tick, FeeAmount, LiquidityMath } from "@uniswap/v3-sdk";
 import JSBI from 'jsbi';
 import TickLensABI from "./contracts/ticklens.json";
  
@@ -32,6 +32,14 @@ interface QuoteExactOutputSingleParams {
   amountOut: bigint;
   poolAddress: string;
   provider: ethers.Provider;
+}
+
+interface SwapState {
+  amountSpecifiedRemain: JSBI,
+  amountCalculated: JSBI,
+  sqrtPriceX96: JSBI,
+  tick: number,
+  liquidity: JSBI
 }
 
 /**
@@ -233,7 +241,6 @@ export async function swappingEstimator(poolAddress: string, provider: ethers.Pr
     provider
   );
   const slot0 = await poolContract.slot0();
-  console.log(poolAddress)
   const rawTicks = await lensContract.getPopulatedTicksInWord(poolAddress, 1);
   const allTicks: Tick[] = [];
 
@@ -248,23 +255,48 @@ export async function swappingEstimator(poolAddress: string, provider: ethers.Pr
       });
   }
 
-  const currSqrtPricex96 = JSBI.BigInt(sqrtPriceX96);
-  let currTick = TickMath.getTickAtSqrtRatio(JSBI.BigInt(currSqrtPricex96));
-  const tickSpace = Number(await poolContract.tickSpacing());
+  const startSqrtPricex96 = JSBI.BigInt(sqrtPriceX96);
+  let sellTick = TickMath.getTickAtSqrtRatio(JSBI.BigInt(startSqrtPricex96));
+  const currTick = slot0.tick();
+  const tickSpace = Number(await poolContract.tickSpacing()); // directly correlates to fee
 
   const tickProvider = new TickListDataProvider(allTicks, tickSpace);
 
-  // Given sellAmt and the "current" tick, compute
+  let liquidity = slot0.liquidity(); 
 
-  let amntRemain = sellAmt;
-  const liquidity = 0; // ????
+  // move the current tick to the target tick (to start selling at)
+  while (sellTick !== currTick) {
+    let lte = sellTick <= currTick; // left or right
+    let [ tickNext, initialied ] = await tickProvider.nextInitializedTickWithinOneWord(sellTick, lte, tickSpace);
+    if (tickNext < TickMath.MIN_TICK) {
+      tickNext = TickMath.MIN_TICK;
+    } else if (tickNext > TickMath.MAX_TICK) {
+        tickNext = TickMath.MAX_TICK;
+    }
+    
+    if (initialied) {
+      // move liquidity to sellTick
+      const tickData = await tickProvider.getTick(tickNext);
+      liquidity = LiquidityMath.addDelta(JSBI.BigInt(liquidity), JSBI.BigInt(tickData.liquidityNet));
+    } else {
+      break; // TODO
+    }
+  }
 
-  //TODO cehck zeroforone
-  const fee = JSBI.BigInt(Number(await poolContract.feeGrowthGlobal0X128()));
+  const zeroForOne = false;// todo check errors here
+  const sellAmtJSBI = JSBI.BigInt(Number(sellAmt));
+  let state: SwapState = {
+    amountSpecifiedRemain: sellAmtJSBI,
+    amountCalculated: JSBI.BigInt(0),
+    sqrtPriceX96: startSqrtPricex96,
+    tick: sellTick,
+    liquidity
+  };
 
-  while (amntRemain > 0) {
-    let amntCalculated = 0;
-    let [ tickNext, initialied ] = await tickProvider.nextInitializedTickWithinOneWord(currTick, true, tickSpace);
+  // This also should have the price limit (but we dont have one)
+  while (JSBI.greaterThan(state.amountSpecifiedRemain, JSBI.BigInt(0))) {
+
+    let [ tickNext, initialied ] = await tickProvider.nextInitializedTickWithinOneWord(state.tick, zeroForOne, tickSpace);
 
     if (tickNext < TickMath.MIN_TICK) {
       tickNext = TickMath.MIN_TICK;
@@ -272,15 +304,39 @@ export async function swappingEstimator(poolAddress: string, provider: ethers.Pr
         tickNext = TickMath.MAX_TICK;
     }
 
-    const sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(tickNext);
+    const stepSqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(tickNext);
 
     //TODO FEE??
-    const [ stateSqrtPricex96, stepAmntin, stepAmntOut, stepFeeAmnt ] = SwapMath.computeSwapStep(currSqrtPricex96, sqrtPriceNextX96, liquidity, JSBI.BigInt(Number(amntRemain)), FeeAmount.LOW);
+    const [ statePrice, stepAmntin, stepAmntOut, stepFeeAmnt ] = SwapMath.computeSwapStep(startSqrtPricex96, stepSqrtPriceNextX96, state.liquidity, state.amountSpecifiedRemain, tickSpace as FeeAmount);
+    state.sqrtPriceX96 = statePrice;
 
-    amntRemain -= (JSBI.ADD(stepAmntin, stepFeeAmnt));
+    state.amountSpecifiedRemain = JSBI.subtract(state.amountSpecifiedRemain, (JSBI.ADD(stepAmntin, stepFeeAmnt)));
+    state.amountCalculated = JSBI.subtract(state.amountCalculated, stepAmntOut); // todo check subtract direction
 
+    if (JSBI.equal(state.sqrtPriceX96, stepSqrtPriceNextX96)) {
+      // reached next price, need to shift tick
+      if (initialied) {
+        const tickData = await tickProvider.getTick(tickNext);
+        const liquidityNet = zeroForOne ? -tickData.liquidityNet : tickData.liquidityNet;
+        state.liquidity = LiquidityMath.addDelta(JSBI.BigInt(state.liquidity), JSBI.BigInt(liquidityNet));
 
+        state.tick = zeroForOne ? tickNext - 1 : tickNext;
+      }
+    }
+    else if (JSBI.equal(state.sqrtPriceX96, startSqrtPricex96)) {
+      state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96); 
+    }
   }
 
-  
+
+  let amount0 = JSBI.subtract(sellAmtJSBI, state.amountSpecifiedRemain);
+  let amount1 = state.amountCalculated;
+
+  if (!zeroForOne) {
+    [amount1, amount0] = [amount0, amount1];
+  }
+
+  return {
+    amount0, amount1
+  };
 }
