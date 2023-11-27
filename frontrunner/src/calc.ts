@@ -151,7 +151,6 @@ export async function getPriceImpactBySwap(
       provider,
     };
 
-
   // Amount out if we swap only our amtIn
   const raw = await quoteExactInputSingle(params);
   const deltaY_AB = raw.retVal;
@@ -181,8 +180,7 @@ export async function getPriceImpactBySwap(
     ethers.formatUnits(deltaY_BC, decimalsOut)
   );
   // todo this might not work since parseUnits can be a bigint
-  console.log(`${deltaY_BC} and ${BigInt(minVictimAmntOut)}`)
-  if (deltaY_BC < BigInt(minVictimAmntOut)) {
+  if (deltaY_BC < Number(minVictimAmntOut)) {
     console.log(
       "Amount out for victim is less than minVictimAmntOut, abort attack"
     );

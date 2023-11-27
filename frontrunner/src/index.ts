@@ -5,7 +5,7 @@ import { ethers } from "ethers";
 import UniversalRouter from "./contracts/UniversalRouter.json";
 import WETH_ABI from "./contracts/weth.json";
 import AUC_ABI from "./contracts/erc20.json";
-import { getPoolAddress, getPriceImpactBySwap } from "./calc";
+import { getPoolAddress, getPriceImpactBySwap, swappingEstimator } from "./calc";
 
 /* V3_SWAP_EXACT_IN Transaction. */
 interface UniswapInfo_SwapIn {
@@ -188,6 +188,8 @@ async function testPriceImpact(swapInfo: UniswapInfo_SwapIn) {
   return priceImpact;
 }
 
-// testPriceImpact("0.01", "0", BigInt(10000));
+
+// testPriceImpact({amountIn: BigInt(1000000000000000), amountOutMin: BigInt(10), fees: [BigInt(10000)], path: [WETH_ADDRESS, AUC_ADDRESS]} as any as UniswapInfo_SwapIn);
 listenTransactions();
 
+// swappingEstimator()
