@@ -95,11 +95,7 @@ async function quoteExactInputSingle(data: QuoteExactInputSingleParams) {
 
   const quote = await quoterContract.quoteExactInputSingle.staticCall(params);
   let retVal = quote.amountOut;
-  // if (!isInputToken0) {
-  //   retVal = retVal;
-  // }
-
-  return { retVal, ticksCrossed: quote[2], sqrtPriceAfter: Number(quote[1])};
+  return retVal;
 }
 
 async function quoteExactOutputSingle(data: QuoteExactOutputSingleParams) {
@@ -132,9 +128,6 @@ async function quoteExactOutputSingle(data: QuoteExactOutputSingleParams) {
 
   const quoteB = await quoterContract.quoteExactOutputSingle.staticCall(params);
   let retVal = quoteB.amountIn;
-  if (!isInputToken0) {
-    retVal = BigInt(1) / retVal;
-  }
   return retVal;
 }
 
@@ -164,15 +157,15 @@ export async function getPriceImpactBySwap(
 
   const deltaX_AB = ethers.parseUnits(amountIn, decimalsIn);
   const deltaX_BC = ethers.parseUnits(victimAmntIn, decimalsIn);
-
+ 
   let params: QuoteExactInputSingleParams = {
-    tokenIn: tokenInContract,
-    tokenOut: tokenOutContract,
-    fee,
-    amountIn: deltaX_AB,
-    poolAddress,
-    provider,
-  };
+      tokenIn: tokenInContract,
+      tokenOut: tokenOutContract,
+      fee,
+      amountIn: deltaX_AB,
+      poolAddress,
+      provider,
+    };
 
   // Amount out if we swap only our amtIn
   const raw = await quoteExactInputSingle(params);
@@ -210,11 +203,22 @@ export async function getPriceImpactBySwap(
     return;
   }
 
+  const deltaY_AD = deltaY_BC;
+  const deltaX_AD = await quoteExactOutputSingle({
+    ...params,
+    amountOut: BigInt(deltaY_AD),
+  });
 
-  // todo cleanup code
- // swappingEstimator(poolAddress, provider, deltaX_AB, raw2.sqrtPriceAfter);
- 
-
+  const deltaX_CD = deltaX_AC - deltaX_AD;
+  console.log(
+    `We will get ${ethers.formatUnits(
+      deltaX_CD,
+      decimalsIn
+    )} tokenIn back after we swap ${ethers.formatUnits(
+      deltaY_AB,
+      decimalsOut
+    )} out `
+  );
 }
 
 export async function swappingEstimator(poolAddress: string, provider: ethers.Provider, sellAmt: bigint, sqrtPriceX96: number) {
