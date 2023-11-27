@@ -81,18 +81,6 @@ async function quoteExactInputSingle(data: QuoteExactInputSingleParams) {
     data.provider
   );
 
-  // Instantiate the Uniswap v3 pool contract
-  const poolContract = new ethers.Contract(
-    data.poolAddress,
-    PoolABI,
-    data.provider
-  );
-
-  // Determine which token is token0 and get its decimals
-  const token0 = await poolContract.token0();
-
-  // const isInputToken0 = token0 === data.tokenIn.target;
-
   const params = {
     tokenIn: data.tokenIn.target,
     tokenOut: data.tokenOut.target,
@@ -102,8 +90,7 @@ async function quoteExactInputSingle(data: QuoteExactInputSingleParams) {
   };
 
   const quote = await quoterContract.quoteExactInputSingle.staticCall(params);
-  let retVal = quote.amountOut;
-  return retVal;
+  return { retVal: quote.amountOut, sqrtPriceAfter: Number(quote[1]) };
 }
 
 async function quoteExactOutputSingle(data: QuoteExactOutputSingleParams) {
@@ -114,18 +101,6 @@ async function quoteExactOutputSingle(data: QuoteExactOutputSingleParams) {
     data.provider
   );
 
-  // Instantiate the Uniswap v3 pool contract
-  const poolContract = new ethers.Contract(
-    data.poolAddress,
-    PoolABI,
-    data.provider
-  );
-
-  // Determine which token is token0 and get its decimals
-  const token0 = await poolContract.token0();
-
-  const isInputToken0 = token0 === data.tokenIn.target;
-
   const params = {
     tokenIn: data.tokenIn.target,
     tokenOut: data.tokenOut.target,
@@ -134,9 +109,9 @@ async function quoteExactOutputSingle(data: QuoteExactOutputSingleParams) {
     sqrtPriceLimitX96: 0,
   };
 
-  const quoteB = await quoterContract.quoteExactOutputSingle.staticCall(params);
-  let retVal = quoteB.amountIn;
-  return retVal;
+  const quote = await quoterContract.quoteExactOutputSingle.staticCall(params);
+
+  return { retVal: quote.amountIn, sqrtPriceAfter: Number(quote[1]) };
 }
 
 /**
@@ -160,6 +135,7 @@ export async function getPriceImpactBySwap(
   poolAddress: string,
   provider: ethers.Provider
 ) {
+  
   const decimalsIn = await tokenInContract.decimals();
   const decimalsOut = await tokenOutContract.decimals();
 
@@ -174,6 +150,8 @@ export async function getPriceImpactBySwap(
       poolAddress,
       provider,
     };
+
+    // swappingEstimator(poolAddress, provider, BigInt(amountIn), 0);
 
   // Amount out if we swap only our amtIn
   const raw = await quoteExactInputSingle(params);
@@ -212,10 +190,12 @@ export async function getPriceImpactBySwap(
   }
 
   const deltaY_AD = deltaY_BC;
-  const deltaX_AD = await quoteExactOutputSingle({
+  const rawSell = await quoteExactOutputSingle({
     ...params,
     amountOut: BigInt(deltaY_AD),
   });
+
+  const deltaX_AD = rawSell.retVal;
 
   const deltaX_CD = deltaX_AC - deltaX_AD;
   console.log(
