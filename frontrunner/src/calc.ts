@@ -207,6 +207,12 @@ export async function getPriceImpactBySwap(
       decimalsOut
     )} out `
   );
+
+
+  const sqrtPriceX96AfterBuys = raw2.sqrtPriceAfter;
+
+  const tst = await swappingEstimator(poolAddress, provider, deltaX_AB, sqrtPriceX96AfterBuys);
+  console.log(`$a0: ${tst.amount0}, a1: ${tst.amount1}`);
 }
 
 export async function swappingEstimator(poolAddress: string, provider: ethers.Provider, sellAmt: bigint, sqrtPriceX96: number) {
@@ -237,13 +243,13 @@ export async function swappingEstimator(poolAddress: string, provider: ethers.Pr
 
   const startSqrtPricex96 = JSBI.BigInt(sqrtPriceX96);
   let sellTick = TickMath.getTickAtSqrtRatio(JSBI.BigInt(startSqrtPricex96));
-  const currTick = slot0.tick();
+  const currTick = slot0.tick;
   const tickSpace = Number(await poolContract.tickSpacing()); // directly correlates to fee
 
   const tickProvider = new TickListDataProvider(allTicks, tickSpace);
 
-  let liquidity = slot0.liquidity(); 
-
+  let liquidity = await poolContract.liquidity();
+  console.log(currTick);
   // move the current tick to the target tick (to start selling at)
   while (sellTick !== currTick) {
     let lte = sellTick <= currTick; // left or right
@@ -257,10 +263,10 @@ export async function swappingEstimator(poolAddress: string, provider: ethers.Pr
     if (initialied) {
       // move liquidity to sellTick
       const tickData = await tickProvider.getTick(tickNext);
-      liquidity = LiquidityMath.addDelta(JSBI.BigInt(liquidity), JSBI.BigInt(tickData.liquidityNet));
-    } else {
-      break; // TODO
+      liquidity = LiquidityMath.addDelta(liquidity, JSBI.BigInt(tickData.liquidityNet));
     }
+    sellTick = lte ? tickNext - 1 : tickNext;
+    console.log(sellTick)
   }
 
   const zeroForOne = false;// todo check errors here
