@@ -136,6 +136,33 @@ function decodeData(
   };
 }
 
+/**
+ * Encodes a transaction to the UniversalRouter contract.
+ * @param swapInfo Swap information to encode.
+ * @param deadline Deadline for the transaction.
+ * @returns Encoded transaction.
+ * @throws Error if the swap information is invalid.
+ * @throws Error if the deadline is invalid.
+ */
+function encodeTransaction(swapInfo: UniswapInfo_SwapIn | UniswapInfo_SwapOut, deadline: BigInt) {
+    const abiEncode = new ethers.AbiCoder();
+    const path = `${swapInfo.path[0]}0x${swapInfo.fees[0]}${swapInfo.path[1]}`;
+    console.log(path);
+    if ('amountIn' in swapInfo) {
+        const encoded = abiEncode.encode(
+            ["address", "uint256", "uint256", "bytes", "bool"],
+            [swapInfo.recipient, swapInfo.amountIn, swapInfo.amountOutMin, path, swapInfo.payerIsUser]
+        );
+        return encoded;
+    } else {
+        const encoded = abiEncode.encode(
+            ["address", "uint256", "uint256", "bytes", "bool"],
+            [swapInfo.recipient, swapInfo.amountOut, swapInfo.amountInMax, path, swapInfo.payerIsUser]
+        );
+        return encoded;
+    }
+}
+
 async function listenTransactions() {
   const subscription = await web3.eth.subscribe(
     "pendingTransactions",
@@ -170,6 +197,15 @@ async function listenTransactions() {
 
 listenTransactions();
 
+console.log(encodeTransaction({
+    recipient: "0x0000000000000000000000000000000000000001",
+    amountIn: BigInt(1000000000000000000),
+    amountOutMin: BigInt(0),
+    path: ["0xedB2AE3DA8A443Cf90f67539A886f69c85BD5d69", "0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6"],
+    fees: [BigInt(10000)],
+    payerIsUser: true,
+}, BigInt(1000000000000000000)));
+
 async function test() {
   const provider = new ethers.AlchemyProvider(
     "goerli",
@@ -196,5 +232,3 @@ async function test() {
 
   console.log(priceImpact);
 }
-
-
