@@ -15,6 +15,12 @@ import {
   getPriceImpactBySwap,
   swappingEstimator,
 } from "./calc";
+import { ChainId, Token } from "@uniswap/sdk-core";
+import { simulateAttack } from "./SwapManager";
+import { FeeAmount } from "@uniswap/v3-sdk";
+const {
+  abi: PoolABI,
+} = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json");
 
 /* V3_SWAP_EXACT_IN Transaction. */
 interface UniswapInfo_SwapIn {
@@ -36,7 +42,7 @@ interface CandidateTx {
 
 const web3 = new Web3(process.env.ALCHEMY_WS_URL);
 const routerAbi = new ethers.Interface(UniversalRouter);
-const attackBudgetIn = "0.01";
+const attackBudgetIn = ethers.parseEther("0.07");
 const provider = new ethers.AlchemyProvider(
   NETWORK,
   process.env.ALCHEMY_API_KEY
@@ -44,19 +50,6 @@ const provider = new ethers.AlchemyProvider(
 let FR_LOCK = false;
 
 const tokenInAddr = WETH_ADDRESS;
-let tokenOutAddr = "";
-const tokenInABI = WETH_ABI;
-const tokenOutABI = ERC20_ABI;
-const tokenInContract = new ethers.Contract(tokenInAddr, tokenInABI, provider);
-let tokenOutContract: ethers.Contract;
-let fee: bigint;
-let poolAddress: string;
-let decimalsIn: bigint;
-let decimalsOut: bigint;
-
-async function init() {
-  decimalsIn = await tokenInContract.decimals();
-}
 
 /**
  * Decodes function call into the UniversalRouter contract and outputs human readable object
@@ -171,11 +164,8 @@ async function listenTransactions(
           rawTxData.gas
         );
         const path = uniswapInfo?.swapInfo?.path;
-        if (uniswapInfo?.swapInfo) {
-          console.log(uniswapInfo?.swapInfo);
-        }
-        if (path && path[0] === tokenInAddr.toLowerCase()) {
-          console.log("Found a swap in transaction: ", uniswapInfo);
+        if (uniswapInfo && path && path[0] === tokenInAddr.toLowerCase()) {
+          // console.log("Found a swap in transaction: ", uniswapInfo);
           callback(uniswapInfo?.swapInfo);
         }
       }
@@ -184,21 +174,24 @@ async function listenTransactions(
 }
 
 async function frontRun(swapInfo: UniswapInfo_SwapIn) {
-  fee = swapInfo?.fees[0];
+  const poolAddress = await getPoolAddress(
+    swapInfo.path[0],
+    swapInfo.path[1],
+    swapInfo.fees[0],
+    provider
+  );
 
-  const path = swapInfo.path;
-  tokenOutAddr = path[1];
-  tokenOutContract = new ethers.Contract(tokenOutAddr, tokenOutABI, provider);
-  decimalsOut = await tokenOutContract.decimals();
-  poolAddress = await getPoolAddress(tokenInAddr, tokenOutAddr, fee, provider);
-
-  //   const totalFee = (Number(fee) / 1000000) * (Number(attackBudgetIn) * 2);
-  const totalFee = 0;
+  const poolContract = new ethers.Contract(
+    poolAddress,
+    PoolABI,
+    provider
+  );
+  
   const totalGas = 0;
-  let profit = await testPriceImpact(swapInfo);
-  profit =
-    Number(ethers.formatUnits(profit, decimalsIn)) - (totalFee + totalGas);
-  console.log("Total fee: ", totalFee);
+  console.log("Frontrun executed ");
+  let profit = Number(await checkProfitability(swapInfo, poolContract)); // 14121212312 -> 1.1
+  console.log(`Raw returned porfit: ${profit}`)
+  profit = profit - totalGas;
   console.log("Total gas: ", totalGas);
   console.log("Profit: ", profit);
   if (profit > 0) {
@@ -214,33 +207,26 @@ async function frontRun(swapInfo: UniswapInfo_SwapIn) {
   }
 }
 
-async function testPriceImpact(swapInfo: UniswapInfo_SwapIn) {
+async function checkProfitability(swapInfo: UniswapInfo_SwapIn, poolContract: ethers.Contract) {
+  const addressTokenA = swapInfo.path[0].toLowerCase();
+  const addressTokenB = swapInfo.path[1].toLowerCase();
   const victimAmntIn = swapInfo.amountIn;
   const minVictimAmntOut = swapInfo.amountOutMin;
+  const fee = FeeAmount.HIGH;
 
-  const priceImpact = await getPriceImpactBySwap(
-    tokenInContract,
-    tokenOutContract,
-    decimalsIn,
-    decimalsOut,
-    fee,
-    attackBudgetIn,
-    ethers.formatUnits(victimAmntIn, decimalsIn),
-    ethers.formatUnits(minVictimAmntOut, decimalsOut),
-    poolAddress,
-    provider
-  );
+  // TODO SUPPORT OTHER POOLS. CAN WE USE IERC-20 TO JUST GET DECIMLS()?
+  const ContractTokenA = new ethers.Contract(addressTokenA, ERC20_ABI, provider);
+  const ContractTokenB = new ethers.Contract(addressTokenB, ERC20_ABI, provider);
 
-  return priceImpact;
+  const tokenA = new Token(ChainId.GOERLI, addressTokenA, Number(await ContractTokenA.decimals()));
+  const tokenB = new Token(ChainId.GOERLI, addressTokenB, Number(await ContractTokenB.decimals()));
+
+  const retVal = await simulateAttack(poolContract, tokenA, tokenB, (Number(fee) as FeeAmount), attackBudgetIn, victimAmntIn, minVictimAmntOut);
+
+  return retVal;
 }
 
-// testPriceImpact({amountIn: BigInt(1000000000000000), amountOutMin: BigInt(10), fees: [BigInt(10000)], path: [WETH_ADDRESS, AUC_ADDRESS]} as any as UniswapInfo_SwapIn);
-// listenTransactions(frontRun);
-
-// swappingEstimator()
-
 async function main() {
-  await init();
   await listenTransactions(frontRun);
 }
 
