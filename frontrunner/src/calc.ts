@@ -9,12 +9,22 @@ const {
   abi: FactoryABI,
 } = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json");
 
-import { TickMath, SwapMath, TickListDataProvider, Tick, FeeAmount, LiquidityMath } from "@uniswap/v3-sdk";
-import JSBI from 'jsbi';
+import {
+  TickMath,
+  SwapMath,
+  TickListDataProvider,
+  Tick,
+  FeeAmount,
+  LiquidityMath,
+} from "@uniswap/v3-sdk";
+import JSBI from "jsbi";
 import TickLensABI from "./contracts/ticklens.json";
- 
 
-import { QUOTER2_ADDRESS, FACTORY_ADDRESS, TICKLENS_ADDRESS } from "./config/info";
+import {
+  QUOTER2_ADDRESS,
+  FACTORY_ADDRESS,
+  TICKLENS_ADDRESS,
+} from "./config/info";
 
 interface QuoteExactInputSingleParams {
   tokenIn: ethers.Contract;
@@ -35,11 +45,11 @@ interface QuoteExactOutputSingleParams {
 }
 
 interface SwapState {
-  amountSpecifiedRemain: JSBI,
-  amountCalculated: JSBI,
-  sqrtPriceX96: JSBI,
-  tick: number,
-  liquidity: JSBI
+  amountSpecifiedRemain: JSBI;
+  amountCalculated: JSBI;
+  sqrtPriceX96: JSBI;
+  tick: number;
+  liquidity: JSBI;
 }
 
 /**
@@ -128,6 +138,8 @@ async function quoteExactOutputSingle(data: QuoteExactOutputSingleParams) {
 export async function getPriceImpactBySwap(
   tokenInContract: ethers.Contract,
   tokenOutContract: ethers.Contract,
+  decimalsIn: bigint,
+  decimalsOut: bigint,
   fee: bigint,
   amountIn: string,
   victimAmntIn: string,
@@ -135,21 +147,17 @@ export async function getPriceImpactBySwap(
   poolAddress: string,
   provider: ethers.Provider
 ) {
-  
-  const decimalsIn = await tokenInContract.decimals();
-  const decimalsOut = await tokenOutContract.decimals();
-
   const deltaX_AB = ethers.parseUnits(amountIn, decimalsIn);
   const deltaX_BC = ethers.parseUnits(victimAmntIn, decimalsIn);
- 
+
   let params: QuoteExactInputSingleParams = {
-      tokenIn: tokenInContract,
-      tokenOut: tokenOutContract,
-      fee,
-      amountIn: deltaX_AB,
-      poolAddress,
-      provider,
-    };
+    tokenIn: tokenInContract,
+    tokenOut: tokenOutContract,
+    fee,
+    amountIn: deltaX_AB,
+    poolAddress,
+    provider,
+  };
 
   // Amount out if we swap only our amtIn
   const raw = await quoteExactInputSingle(params);
@@ -179,12 +187,12 @@ export async function getPriceImpactBySwap(
     )} AFTER our swap: `,
     ethers.formatUnits(deltaY_BC, decimalsOut)
   );
-  // todo this might not work since parseUnits can be a bigint
-  if (deltaY_BC < Number(minVictimAmntOut)) {
+
+  if (Number(deltaY_BC) < Number(minVictimAmntOut)) {
     console.log(
       "Amount out for victim is less than minVictimAmntOut, abort attack"
     );
-    return;
+    return 0;
   }
 
   const deltaY_AD = deltaY_BC;
@@ -207,16 +215,21 @@ export async function getPriceImpactBySwap(
   );
 
   const netDifference = deltaX_CD - deltaX_AB;
-  console.log(`Profit (before gas): ${ethers.formatUnits(netDifference, decimalsOut)}`);
+  console.log(
+    `Profit (before gas): ${ethers.formatUnits(netDifference, decimalsIn)}`
+  );
   return netDifference;
 }
 
-export async function swappingEstimator(poolAddress: string, provider: ethers.Provider, swapAmnt: bigint, sqrtPriceX96: number, feeAmt: number, zeroForOne: boolean) {
-  const poolContract = new ethers.Contract(
-    poolAddress,
-    PoolABI,
-    provider
-  );
+export async function swappingEstimator(
+  poolAddress: string,
+  provider: ethers.Provider,
+  swapAmnt: bigint,
+  sqrtPriceX96: number,
+  feeAmt: number,
+  zeroForOne: boolean
+) {
+  const poolContract = new ethers.Contract(poolAddress, PoolABI, provider);
   const lensContract = new ethers.Contract(
     TICKLENS_ADDRESS,
     TickLensABI,
@@ -231,13 +244,12 @@ export async function swappingEstimator(poolAddress: string, provider: ethers.Pr
   // rawTicks is returned in reverse sort, need to sort and format it
   for (let i = rawTicks.length - 1; i >= 0; i--) {
     let f = rawTicks[i];
-    const tickObj = 
-    {
+    const tickObj = {
       index: Number(f[0]),
       liquidityGross: JSBI.BigInt(Number(f[2])),
-      liquidityNet: JSBI.BigInt(Number(f[1]))
+      liquidityNet: JSBI.BigInt(Number(f[1])),
     };
-  
+
     allTicks.push(tickObj);
   }
 
@@ -258,40 +270,59 @@ export async function swappingEstimator(poolAddress: string, provider: ethers.Pr
     amountCalculated: JSBI.BigInt(0),
     sqrtPriceX96: slot0.sqrtPriceX96, //todo use startSqrtPricex96
     tick: Number(currTick), // todo
-    liquidity
+    liquidity,
   };
 
   // This also should have the price limit (but we dont have one)
   while (JSBI.greaterThan(state.amountSpecifiedRemain, JSBI.BigInt(0))) {
     const stepSqrtPriceStartX96 = state.sqrtPriceX96;
 
-    let [ tickNext, initialied ] = await tickProvider.nextInitializedTickWithinOneWord(state.tick, zeroForOne, tickSpace);
+    let [tickNext, initialied] =
+      await tickProvider.nextInitializedTickWithinOneWord(
+        state.tick,
+        zeroForOne,
+        tickSpace
+      );
 
     if (tickNext < TickMath.MIN_TICK) {
       tickNext = TickMath.MIN_TICK;
     } else if (tickNext > TickMath.MAX_TICK) {
-        tickNext = TickMath.MAX_TICK;
+      tickNext = TickMath.MAX_TICK;
     }
 
     const stepSqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(tickNext);
 
-    const [ statePrice, stepAmntin, stepAmntOut, stepFeeAmnt ] = SwapMath.computeSwapStep(startSqrtPricex96, stepSqrtPriceNextX96, state.liquidity, state.amountSpecifiedRemain, feeAmt as FeeAmount);
+    const [statePrice, stepAmntin, stepAmntOut, stepFeeAmnt] =
+      SwapMath.computeSwapStep(
+        startSqrtPricex96,
+        stepSqrtPriceNextX96,
+        state.liquidity,
+        state.amountSpecifiedRemain,
+        feeAmt as FeeAmount
+      );
     state.sqrtPriceX96 = statePrice;
 
-    state.amountSpecifiedRemain = JSBI.subtract(state.amountSpecifiedRemain, (JSBI.ADD(stepAmntin, stepFeeAmnt)));
+    state.amountSpecifiedRemain = JSBI.subtract(
+      state.amountSpecifiedRemain,
+      JSBI.ADD(stepAmntin, stepFeeAmnt)
+    );
     state.amountCalculated = JSBI.subtract(state.amountCalculated, stepAmntOut); // todo check subtract direction
 
     if (JSBI.equal(state.sqrtPriceX96, stepSqrtPriceNextX96)) {
       // reached next price, need to shift tick
       if (initialied) {
         const tickData = await tickProvider.getTick(tickNext);
-        const liquidityNet = zeroForOne ? -tickData.liquidityNet : tickData.liquidityNet;
-        state.liquidity = LiquidityMath.addDelta(state.liquidity, JSBI.BigInt(liquidityNet));
+        const liquidityNet = zeroForOne
+          ? -tickData.liquidityNet
+          : tickData.liquidityNet;
+        state.liquidity = LiquidityMath.addDelta(
+          state.liquidity,
+          JSBI.BigInt(liquidityNet)
+        );
       }
       state.tick = zeroForOne ? tickNext - 1 : tickNext;
-    }
-    else if (JSBI.equal(state.sqrtPriceX96, stepSqrtPriceStartX96)) {
-      state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96); 
+    } else if (JSBI.equal(state.sqrtPriceX96, stepSqrtPriceStartX96)) {
+      state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96);
     }
   }
 
@@ -303,6 +334,7 @@ export async function swappingEstimator(poolAddress: string, provider: ethers.Pr
   }
 
   return {
-    amount0, amount1
+    amount0,
+    amount1,
   };
 }

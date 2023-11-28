@@ -1,11 +1,20 @@
 import "dotenv/config";
 import { Web3 } from "web3";
-import { UNISWAPROUTER, WETH_ADDRESS, AUC_ADDRESS, NETWORK } from "./config/info";
+import {
+  UNISWAPROUTER,
+  WETH_ADDRESS,
+  AUC_ADDRESS,
+  NETWORK,
+} from "./config/info";
 import { ethers } from "ethers";
 import UniversalRouter from "./contracts/UniversalRouter.json";
 import WETH_ABI from "./contracts/weth.json";
-import AUC_ABI from "./contracts/erc20.json";
-import { getPoolAddress, getPriceImpactBySwap, swappingEstimator } from "./calc";
+import ERC20_ABI from "./contracts/erc20.json";
+import {
+  getPoolAddress,
+  getPriceImpactBySwap,
+  swappingEstimator,
+} from "./calc";
 
 /* V3_SWAP_EXACT_IN Transaction. */
 interface UniswapInfo_SwapIn {
@@ -28,6 +37,26 @@ interface CandidateTx {
 const web3 = new Web3(process.env.ALCHEMY_WS_URL);
 const routerAbi = new ethers.Interface(UniversalRouter);
 const attackBudgetIn = "0.01";
+const provider = new ethers.AlchemyProvider(
+  NETWORK,
+  process.env.ALCHEMY_API_KEY
+);
+let FR_LOCK = false;
+
+const tokenInAddr = WETH_ADDRESS;
+let tokenOutAddr = "";
+const tokenInABI = WETH_ABI;
+const tokenOutABI = ERC20_ABI;
+const tokenInContract = new ethers.Contract(tokenInAddr, tokenInABI, provider);
+let tokenOutContract: ethers.Contract;
+let fee: bigint;
+let poolAddress: string;
+let decimalsIn: bigint;
+let decimalsOut: bigint;
+
+async function init() {
+  decimalsIn = await tokenInContract.decimals();
+}
 
 /**
  * Decodes function call into the UniversalRouter contract and outputs human readable object
@@ -105,7 +134,7 @@ function decodeData(
     payerIsUser: decoded[4],
     fees: fees,
   };
-  
+
   return {
     txFrom: from,
     txGas: txgas,
@@ -115,7 +144,9 @@ function decodeData(
   };
 }
 
-async function listenTransactions() {
+async function listenTransactions(
+  callback: (swapInfo: UniswapInfo_SwapIn) => void
+) {
   const subscription = await web3.eth.subscribe(
     "pendingTransactions",
     (err: any, res: any) => {
@@ -139,48 +170,63 @@ async function listenTransactions() {
           tx,
           rawTxData.gas
         );
-        if (uniswapInfo) {
-          console.log(uniswapInfo);
-          const p = await testPriceImpact(uniswapInfo.swapInfo);
-          if (p && p > 0) {
-            console.log(p);
-          }
+        const path = uniswapInfo?.swapInfo?.path;
+        if (uniswapInfo?.swapInfo) {
+          console.log(uniswapInfo?.swapInfo);
+        }
+        if (path && path[0] === tokenInAddr.toLowerCase()) {
+          console.log("Found a swap in transaction: ", uniswapInfo);
+          callback(uniswapInfo?.swapInfo);
         }
       }
     } catch (err) {}
   });
 }
 
+async function frontRun(swapInfo: UniswapInfo_SwapIn) {
+  fee = swapInfo?.fees[0];
+
+  const path = swapInfo.path;
+  tokenOutAddr = path[1];
+  tokenOutContract = new ethers.Contract(tokenOutAddr, tokenOutABI, provider);
+  decimalsOut = await tokenOutContract.decimals();
+  poolAddress = await getPoolAddress(tokenInAddr, tokenOutAddr, fee, provider);
+
+  //   const totalFee = (Number(fee) / 1000000) * (Number(attackBudgetIn) * 2);
+  const totalFee = 0;
+  const totalGas = 0;
+  let profit = await testPriceImpact(swapInfo);
+  profit =
+    Number(ethers.formatUnits(profit, decimalsIn)) - (totalFee + totalGas);
+  console.log("Total fee: ", totalFee);
+  console.log("Total gas: ", totalGas);
+  console.log("Profit: ", profit);
+  if (profit > 0) {
+    console.log("This is profitable: ", profit);
+    if (FR_LOCK) {
+      console.log("Front run already in progress, aborting attack");
+    }
+    FR_LOCK = true;
+    console.log("Front running attack initiated");
+    // free lock after we confirm that we received our profit
+    FR_LOCK = false;
+    console.log("Front running attack completed");
+  }
+}
+
 async function testPriceImpact(swapInfo: UniswapInfo_SwapIn) {
   const victimAmntIn = swapInfo.amountIn;
   const minVictimAmntOut = swapInfo.amountOutMin;
-  const fee = swapInfo.fees[0];
-
-  const provider = new ethers.AlchemyProvider(
-    NETWORK,
-    process.env.ALCHEMY_API_KEY
-  );
-  const WETH_CONTRACT = new ethers.Contract(WETH_ADDRESS, WETH_ABI, provider);
-  const AUC_CONTRACT = new ethers.Contract(AUC_ADDRESS, AUC_ABI, provider);
-
-  if (swapInfo.path[0].toLowerCase() !== WETH_ADDRESS.toLowerCase() || swapInfo.path[1].toLowerCase() !== AUC_ADDRESS.toLowerCase()) {
-    return BigInt(0);
-  }
-
-  const poolAddress = await getPoolAddress(
-    WETH_ADDRESS,
-    AUC_ADDRESS,
-    fee,
-    provider
-  );
 
   const priceImpact = await getPriceImpactBySwap(
-    WETH_CONTRACT,
-    AUC_CONTRACT,
+    tokenInContract,
+    tokenOutContract,
+    decimalsIn,
+    decimalsOut,
     fee,
     attackBudgetIn,
-    ethers.formatUnits(victimAmntIn),
-    ethers.formatUnits(minVictimAmntOut),
+    ethers.formatUnits(victimAmntIn, decimalsIn),
+    ethers.formatUnits(minVictimAmntOut, decimalsOut),
     poolAddress,
     provider
   );
@@ -188,8 +234,14 @@ async function testPriceImpact(swapInfo: UniswapInfo_SwapIn) {
   return priceImpact;
 }
 
-
 // testPriceImpact({amountIn: BigInt(1000000000000000), amountOutMin: BigInt(10), fees: [BigInt(10000)], path: [WETH_ADDRESS, AUC_ADDRESS]} as any as UniswapInfo_SwapIn);
-listenTransactions();
+// listenTransactions(frontRun);
 
 // swappingEstimator()
+
+async function main() {
+  await init();
+  await listenTransactions(frontRun);
+}
+
+main();
