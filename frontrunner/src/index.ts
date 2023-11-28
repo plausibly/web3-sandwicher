@@ -115,6 +115,33 @@ function decodeData(
   };
 }
 
+/**
+ * Encodes a transaction to the UniversalRouter contract.
+ * @param swapInfo Swap information to encode.
+ * @param deadline Deadline for the transaction.
+ * @returns Encoded transaction.
+ * @throws Error if the swap information is invalid.
+ * @throws Error if the deadline is invalid.
+ */
+function encodeTransaction(swapInfo: UniswapInfo_SwapIn | UniswapInfo_SwapOut, deadline: BigInt) {
+    const abiEncode = new ethers.AbiCoder();
+    const path = `${swapInfo.path[0]}0x${swapInfo.fees[0]}${swapInfo.path[1]}`;
+    console.log(path);
+    if ('amountIn' in swapInfo) {
+        const encoded = abiEncode.encode(
+            ["address", "uint256", "uint256", "bytes", "bool"],
+            [swapInfo.recipient, swapInfo.amountIn, swapInfo.amountOutMin, path, swapInfo.payerIsUser]
+        );
+        return encoded;
+    } else {
+        const encoded = abiEncode.encode(
+            ["address", "uint256", "uint256", "bytes", "bool"],
+            [swapInfo.recipient, swapInfo.amountOut, swapInfo.amountInMax, path, swapInfo.payerIsUser]
+        );
+        return encoded;
+    }
+}
+
 async function listenTransactions() {
   const subscription = await web3.eth.subscribe(
     "pendingTransactions",
