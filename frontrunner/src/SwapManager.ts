@@ -9,12 +9,14 @@ import {
   TickLibrary,
   mostSignificantBit,
   Route,
-  Trade,
-  SwapRouter,
 } from "@uniswap/v3-sdk";
+
+import { SwapRouter, UniswapTrade } from "@uniswap/universal-router-sdk"
+
+import {Trade} from "@uniswap/router-sdk"
 import TickLensABI from "./contracts/ticklens.json";
 
-import { CurrencyAmount, Percent, Token, TradeType } from "@uniswap/sdk-core";
+import { CurrencyAmount, Percent, Token, TradeType, Currency} from "@uniswap/sdk-core";
 import { ethers } from "ethers";
 import JSBI from "jsbi";
 import { TICKLENS_ADDRESS } from "./config/info";
@@ -190,14 +192,12 @@ export async function buildTradeParams(
   const pool = await getPoolObject(poolContract, tokenA, tokenB, fee);
 
   const inputAmount = CurrencyAmount.fromRawAmount(tokenA, amountIn);
-  const outputAmount = CurrencyAmount.fromRawAmount(tokenB, expectedOut);
   const route = new Route([pool], tokenA, tokenB);
-  const trade = Trade.createUncheckedTrade({
+  const trade = await Trade.fromRoute(
     route,
     inputAmount,
-    outputAmount,
-    tradeType: TradeType.EXACT_INPUT,
-  });
+    TradeType.EXACT_INPUT,
+  );
   // Get the current time in milliseconds since the Unix epoch
   const currentTimeMillis = Date.now();
 
@@ -214,7 +214,9 @@ export async function buildTradeParams(
     deadline: futureTimeInSeconds,
   };
 
-  const params = SwapRouter.swapCallParameters([trade], options);
+  const uniswapTrade = new UniswapTrade(trade, options);
+
+  const params = SwapRouter.swapCallParameters(uniswapTrade, options);
 
   return params;
 }

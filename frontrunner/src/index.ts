@@ -85,6 +85,7 @@ function decodeData(
   // const V3_SWAP_EXACT_OUT = "01";
 
   const parsed = routerAbi.parseTransaction({ data, value });
+  console.log(parsed)
   if (!parsed || parsed.name !== "execute" || parsed.args.length !== 3) {
     return;
   }
@@ -278,36 +279,34 @@ async function main() {
     ethers.parseUnits("0.0339928", decimalsIn).toString(),
     process.env.WALLET_ADDRESS as string
   );
-    console.log(methodParameters)
-  const x = decodeData(
-    methodParameters.calldata,
-    BigInt(methodParameters.value),
-    process.env.WALLET_ADDRESS as string,
-    "",
-    "0"
-  );
-  console.log(x);
-  // //approve 100 auc to router
-  // const approval = await tokenOutContract.approve(
-  //   UNISWAPROUTER,
-  //   ethers.parseUnits("100", decimalsOut)
+  console.log(methodParameters)
+  // const x = decodeData(
+  //   methodParameters.calldata,
+  //   BigInt(methodParameters.value),
+  //   process.env.WALLET_ADDRESS as string,
+  //   "",
+  //   "0"
   // );
-  // const receipt = await approval.wait();
+  // console.log(x);
+  // //approve 100 auc to router
+  const approval = await tokenOutContract.approve(
+    UNISWAPROUTER,
+    ethers.parseUnits("100", decimalsOut)
+  );
+  const receipt = await approval.wait();
   // console.log(receipt);
-  // // Define the gas price and limit
-  // const gasPrice = ethers.parseUnits("30", "gwei"); // Replace with your desired gas price
-  // const gasLimit = 24000; // Replace with your desired gas limit
+  // Define the gas price and limit
+  const gasPrice = ethers.parseUnits("50", "gwei"); // Replace with your desired gas price
+  const gasLimit = 90000; // Replace with your desired gas limit
 
-  // const tx = {
-  //   data: methodParameters.calldata,
-  //   to: UNISWAPROUTER,
-  //   value: methodParameters.value,
-  //   gasPrice: gasPrice,
-  //   gasLimit: gasLimit,
-  // };
-  // await sendTx(tx);
-  // await init();
-  // await listenTransactions(frontRun);
+  const tx = {
+    data: methodParameters.calldata,
+    to: UNISWAPROUTER,
+    value: methodParameters.value,
+  };
+  await sendTx(tx);
+  await init();
+  await listenTransactions(frontRun);
 }
 
 main();
