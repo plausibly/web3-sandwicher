@@ -5,6 +5,7 @@ import {
   WETH_ADDRESS,
   AUC_ADDRESS,
   NETWORK,
+  TICKLENS_ADDRESS,
 } from "./config/info";
 import { ethers } from "ethers";
 import UniversalRouter from "./contracts/UniversalRouter.json";
@@ -18,10 +19,11 @@ import {
 import { ChainId, Token } from "@uniswap/sdk-core";
 // import { simulateAttack } from "./SwapManager";
 import { FeeAmount } from "@uniswap/v3-sdk";
-import { getNextTick, simulateAttack, buildTradeParams } from "./SwapManager";
+import { simulateAttack, buildTradeParams, fetchAllTicks } from "./SwapManager";
 const {
   abi: PoolABI,
 } = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json");
+
 
 /* V3_SWAP_EXACT_IN Transaction. */
 interface UniswapInfo_SwapIn {
@@ -43,7 +45,7 @@ interface CandidateTx {
 
 const web3 = new Web3(process.env.ALCHEMY_WS_URL);
 const routerAbi = new ethers.Interface(UniversalRouter);
-const attackBudgetIn = ethers.parseEther("1");
+const attackBudgetIn = ethers.parseEther("0.04");
 const provider = new ethers.AlchemyProvider(
   NETWORK,
   process.env.ALCHEMY_API_KEY
@@ -222,53 +224,51 @@ async function checkProfitability(swapInfo: UniswapInfo_SwapIn, poolContract: et
 
   const tokenA = new Token(ChainId.GOERLI, addressTokenA, Number(await ContractTokenA.decimals()));
   const tokenB = new Token(ChainId.GOERLI, addressTokenB, Number(await ContractTokenB.decimals()));
-
+ 
   const retVal = await simulateAttack(poolContract, tokenA, tokenB, fee, attackBudgetIn, victimAmntIn, minVictimAmntOut);
 
   return retVal;
 }
 
-async function executeSwap(poolContract:ethers.Contract, recipient: string, tokenA: Token, tokenB: Token, amountIn: string, amountOut: string, fee: FeeAmount) {
+async function executeSwap(poolContract: ethers.Contract, recipient: string, tokenA: Token, tokenB: Token, amountIn: string, amountOut: string, fee: FeeAmount) {
   const txParam = await buildTradeParams(poolContract, tokenA, tokenB, fee, amountIn, amountOut, recipient);
 
+  console.log(txParam);
   // TODO: Approve transfers
-  // TODO: Build tx
+  // TODO: Build
 
 }
 
 async function main() {
   // await listenTransactions(frontRun);
-    // const addressTokenA = WETH_ADDRESS;
-    // const addressTokenB = AUC_ADDRESS;
-    // const victimAmntIn = ethers.parseEther("0.0005");
-    // const minVictimAmntOut = ethers.parseEther("0.01");
-    // const fee = FeeAmount.HIGH;
+    const addressTokenA = WETH_ADDRESS;
+    const addressTokenB = AUC_ADDRESS;
+    const victimAmntIn = ethers.parseEther("0.0005");
+    const minVictimAmntOut = ethers.parseEther("0.01");
+    const fee = FeeAmount.HIGH;
 
-    // // TODO SUPPORT OTHER POOLS. CAN WE USE IERC-20 TO JUST GET DECIMLS()?
-    // const ContractTokenA = new ethers.Contract(addressTokenA, ERC20_ABI, provider);
-    // const ContractTokenB = new ethers.Contract(addressTokenB, ERC20_ABI, provider);
+    // TODO SUPPORT OTHER POOLS. CAN WE USE IERC-20 TO JUST GET DECIMLS()?
+    const ContractTokenA = new ethers.Contract(addressTokenA, ERC20_ABI, provider);
+    const ContractTokenB = new ethers.Contract(addressTokenB, ERC20_ABI, provider);
 
 
-    // const poolAddress = await getPoolAddress(
-    //   addressTokenA,
-    //   addressTokenB,
-    //   fee,
-    //   provider
-    // );
+    const poolAddress = await getPoolAddress(
+      addressTokenA,
+      addressTokenB,
+      fee,
+      provider
+    );
   
-    // const poolContract = new ethers.Contract(
-    //   poolAddress,
-    //   PoolABI,
-    //   provider
-    // );  
-    
-    // const tokenA = new Token(ChainId.GOERLI, addressTokenA, Number(await ContractTokenA.decimals()));
-    // const tokenB = new Token(ChainId.GOERLI, addressTokenB, Number(await ContractTokenB.decimals()));
+    const poolContract = new ethers.Contract(
+      poolAddress,
+      PoolABI,
+      provider
+    );  
 
-
-    // const tokenA = new Token(ChainId.GOERLI, addressTokenA, Number(await ContractTokenA.decimals()));
-    // const tokenB = new Token(ChainId.GOERLI, addressTokenB, Number(await ContractTokenB.decimals()));
-    // const retVal = await simulateAttack(poolContract, tokenA, tokenB, fee, attackBudgetIn, victimAmntIn, minVictimAmntOut);
+    const tokenA = new Token(ChainId.GOERLI, addressTokenA, Number(await ContractTokenA.decimals()));
+    const tokenB = new Token(ChainId.GOERLI, addressTokenB, Number(await ContractTokenB.decimals()));
+ 
+    const retVal = await simulateAttack(poolContract, tokenA, tokenB, fee, attackBudgetIn, victimAmntIn, minVictimAmntOut);
 }
 
 main();
