@@ -3,27 +3,19 @@ import { Web3 } from "web3";
 import {
   UNISWAPROUTER,
   WETH_ADDRESS,
-  AUC_ADDRESS,
-  NETWORK,
-  TICKLENS_ADDRESS,
 } from "./config/info";
 import { ethers } from "ethers";
 import { provider } from "./config/info";
 import UniversalRouter from "./contracts/UniversalRouter.json";
-import WETH_ABI from "./contracts/weth.json";
 import ERC20_ABI from "./contracts/erc20.json";
 import {
   getPoolAddress,
-  getPriceImpactBySwap,
-  swappingEstimator,
 } from "./calc";
 import { ChainId, Token } from "@uniswap/sdk-core";
 // import { simulateAttack } from "./SwapManager";
 import { FeeAmount } from "@uniswap/v3-sdk";
-import { simulateAttack, buildTradeParams, fetchAllTicks, clearLoadedTicks } from "./SwapManager";
-const {
-  abi: PoolABI,
-} = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json");
+import { simulateAttack, buildTradeParams, clearLoadedTicks } from "./SwapManager";
+import { abi as PoolABI } from "@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json";
 
 
 /* V3_SWAP_EXACT_IN Transaction. */

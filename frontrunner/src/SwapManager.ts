@@ -177,7 +177,7 @@ export async function simulateAttack(
     `Attacker sells ${attackerPurchasedAmount.toExact()} Token B for ${attackerSoldAmount.toExact()} ETH`
   );
 
-  return { 
+  return {
     profit: attackerSoldAmount.subtract(attackerBuyFormat).toExact(),
     sellAmount: victimPurchasedAmount.toExact() 
   };
