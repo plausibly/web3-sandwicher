@@ -47,7 +47,7 @@ interface CandidateTx {
 const web3 = new Web3(process.env.ALCHEMY_WS_URL);
 const routerAbi = new ethers.Interface(UniversalRouter);
 
-const attackBudgetUnformat = "0.01";
+const attackBudgetUnformat = "1";
 const attackBudgetIn = ethers.parseEther(attackBudgetUnformat);
 
 let FR_LOCK = false;
@@ -142,7 +142,7 @@ function decodeData(
 }
 
 async function listenTransactions(
-  callback: (swapInfo: UniswapInfo_SwapIn) => void
+  callback: (txData: CandidateTx) => void
 ) {
   const subscription = await web3.eth.subscribe(
     "pendingTransactions",
@@ -170,14 +170,15 @@ async function listenTransactions(
         const path = uniswapInfo?.swapInfo?.path;
         if (uniswapInfo && path && path[0] === tokenInAddr.toLowerCase()) {
           console.log("Checking transaction: ", uniswapInfo.txHash);
-          callback(uniswapInfo?.swapInfo);
+          callback(uniswapInfo);
         }
       }
     } catch (err) {}
   });
 }
 
-async function frontRun(swapInfo: UniswapInfo_SwapIn) {
+async function frontRun(txData: CandidateTx) {
+  const swapInfo = txData.swapInfo;
   const addressTokenA = swapInfo.path[0].toLowerCase();
   const addressTokenB = swapInfo.path[1].toLowerCase();
   const poolAddress = await getPoolAddress(
@@ -235,6 +236,8 @@ async function frontRun(swapInfo: UniswapInfo_SwapIn) {
     
     FR_LOCK = false;
   }
+
+  return;
 }
 
 async function checkProfitability(swapInfo: UniswapInfo_SwapIn, poolContract: ethers.Contract, tokenA: Token, tokenB: Token) {
@@ -288,38 +291,38 @@ async function executeSwap(poolContract: ethers.Contract, tokenA: Token, tokenB:
 }
 
 async function main() {
-    // console.log("Listening for transactions");
-    // await listenTransactions(frontRun);
-    const addressTokenA = WETH_ADDRESS;
-    const addressTokenB = AUC_ADDRESS;
-    const victimAmntIn = ethers.parseEther("0.0005");
-    const minVictimAmntOut = ethers.parseEther("0.01");
-    const fee = FeeAmount.HIGH;
+    console.log("Listening for transactions");
+    await listenTransactions(frontRun);
+    // const addressTokenA = WETH_ADDRESS;
+    // const addressTokenB = AUC_ADDRESS;
+    // const victimAmntIn = ethers.parseEther("0.0005");
+    // const minVictimAmntOut = ethers.parseEther("0.01");
+    // const fee = FeeAmount.HIGH;
 
-    // TODO SUPPORT OTHER POOLS. CAN WE USE IERC-20 TO JUST GET DECIMLS()?
-    const ContractTokenA = new ethers.Contract(addressTokenA, ERC20_ABI, provider);
-    const ContractTokenB = new ethers.Contract(addressTokenB, ERC20_ABI, provider);
+    // // TODO SUPPORT OTHER POOLS. CAN WE USE IERC-20 TO JUST GET DECIMLS()?
+    // const ContractTokenA = new ethers.Contract(addressTokenA, ERC20_ABI, provider);
+    // const ContractTokenB = new ethers.Contract(addressTokenB, ERC20_ABI, provider);
 
 
-    const poolAddress = await getPoolAddress(
-      addressTokenA,
-      addressTokenB,
-      fee,
-      provider
-    );
+    // const poolAddress = await getPoolAddress(
+    //   addressTokenA,
+    //   addressTokenB,
+    //   fee,
+    //   provider
+    // );
   
-    const poolContract = new ethers.Contract(
-      poolAddress,
-      PoolABI,
-      provider
-    );  
+    // const poolContract = new ethers.Contract(
+    //   poolAddress,
+    //   PoolABI,
+    //   provider
+    // );  
 
-    const tokenA = new Token(ChainId.GOERLI, addressTokenA, Number(await ContractTokenA.decimals()));
-    const tokenB = new Token(ChainId.GOERLI, addressTokenB, Number(await ContractTokenB.decimals()));
-    const recipient = "0xaF9e2959a7520aaD5fe059ED4bcb7ae831e9d6B0";
-    const ok = await executeSwap(poolContract, recipient, tokenA, tokenB, "0.001", FeeAmount.HIGH, false);
+    // const tokenA = new Token(ChainId.GOERLI, addressTokenA, Number(await ContractTokenA.decimals()));
+    // const tokenB = new Token(ChainId.GOERLI, addressTokenB, Number(await ContractTokenB.decimals()));
+    // // // const recipient = "0xaF9e2959a7520aaD5fe059ED4bcb7ae831e9d6B0";
+    // // // const ok = await executeSwap(poolContract, recipient, tokenA, tokenB, "0.001", FeeAmount.HIGH, false);
   
-    console.log(ok)
+    // // // // console.log(ok)
     // const retVal = await simulateAttack(poolContract, tokenA, tokenB, fee, attackBudgetIn, victimAmntIn, minVictimAmntOut);
 }
 //0.33648
