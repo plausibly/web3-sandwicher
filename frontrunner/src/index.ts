@@ -46,7 +46,9 @@ interface CandidateTx {
 
 const web3 = new Web3(process.env.ALCHEMY_WS_URL);
 const routerAbi = new ethers.Interface(UniversalRouter);
-const attackBudgetIn = ethers.parseEther("0.01");
+
+const attackBudgetUnformat = "0.01";
+const attackBudgetIn = ethers.parseEther(attackBudgetUnformat);
 
 let FR_LOCK = false;
 
@@ -176,9 +178,11 @@ async function listenTransactions(
 }
 
 async function frontRun(swapInfo: UniswapInfo_SwapIn) {
+  const addressTokenA = swapInfo.path[0].toLowerCase();
+  const addressTokenB = swapInfo.path[1].toLowerCase();
   const poolAddress = await getPoolAddress(
-    swapInfo.path[0],
-    swapInfo.path[1],
+    addressTokenA,
+    addressTokenB,
     swapInfo.fees[0],
     provider
   );
@@ -188,10 +192,21 @@ async function frontRun(swapInfo: UniswapInfo_SwapIn) {
     PoolABI,
     provider
   );
+
+  const ContractTokenA = new ethers.Contract(addressTokenA, ERC20_ABI, provider);
+  const ContractTokenB = new ethers.Contract(addressTokenB, ERC20_ABI, provider);
+
+  const tokenA = new Token(ChainId.GOERLI, addressTokenA, Number(await ContractTokenA.decimals()));
+  const tokenB = new Token(ChainId.GOERLI, addressTokenB, Number(await ContractTokenB.decimals()));
   
   const totalGas = 0;
   console.log("Frontrun executed ");
-  let profit = Number(await checkProfitability(swapInfo, poolContract)); // 14121212312 -> 1.1
+  const data = await checkProfitability(swapInfo, poolContract, tokenA, tokenB);
+  let profit = Number(data.profit);
+
+  // how much token B we need to sell
+  let amntToSell = Number(data.sellAmount);
+
   console.log(`Raw returned profit: ${profit}`)
   profit = profit - totalGas;
   console.log("Total gas: ", totalGas);
@@ -200,28 +215,34 @@ async function frontRun(swapInfo: UniswapInfo_SwapIn) {
     console.log("This is profitable: ", profit);
     if (FR_LOCK) {
       console.log("Front run already in progress, aborting attack");
+      return
     }
     FR_LOCK = true;
     console.log("Front running attack initiated");
-    // free lock after we confirm that we received our profit
+    try {
+      const feeAmnt = (Number(swapInfo.fees[0]) as FeeAmount)
+      // Buy tokenB with TokenA (ETH)
+      // const receiptBuy = await executeSwap(poolContract, tokenA, tokenB, attackBudgetUnformat, feeAmnt, true);
+      
+      // wait for victim (how?)
+  
+      // const receiptSell = await executeSwap(poolContract,  tokenA, tokenB, amntToSell.toString(), feeAmnt, false);
+      console.log("Front running attack completed");
+
+    } catch (e) {
+      console.log("An error occurred");
+    }
+    
     FR_LOCK = false;
-    console.log("Front running attack completed");
   }
 }
 
-async function checkProfitability(swapInfo: UniswapInfo_SwapIn, poolContract: ethers.Contract) {
+async function checkProfitability(swapInfo: UniswapInfo_SwapIn, poolContract: ethers.Contract, tokenA: Token, tokenB: Token) {
   clearLoadedTicks();
-  const addressTokenA = swapInfo.path[0].toLowerCase();
-  const addressTokenB = swapInfo.path[1].toLowerCase();
   const victimAmntIn = swapInfo.amountIn;
   const minVictimAmntOut = swapInfo.amountOutMin;
   const fee = Number(swapInfo.fees[0]) as FeeAmount;
 
-  const ContractTokenA = new ethers.Contract(addressTokenA, ERC20_ABI, provider);
-  const ContractTokenB = new ethers.Contract(addressTokenB, ERC20_ABI, provider);
-
-  const tokenA = new Token(ChainId.GOERLI, addressTokenA, Number(await ContractTokenA.decimals()));
-  const tokenB = new Token(ChainId.GOERLI, addressTokenB, Number(await ContractTokenB.decimals()));
   console.log(`Checking profitability on a potential transaction`);
  
   const retVal = await simulateAttack(poolContract, tokenA, tokenB, fee, attackBudgetIn, victimAmntIn, minVictimAmntOut);
@@ -229,59 +250,77 @@ async function checkProfitability(swapInfo: UniswapInfo_SwapIn, poolContract: et
   return retVal;
 }
 
-
-async function executeSwap(poolContract: ethers.Contract, recipient: string, tokenA: Token, tokenB: Token, amountIn: string, fee: FeeAmount, aForB: boolean) {
-  const txParam = await buildTradeParams(poolContract, tokenA, tokenB, fee, amountIn, recipient);
-
+/**
+ * Execute a swap given the parameters. 
+ * @param poolContract 
+ * @param recipient 
+ * @param tokenA primary token in pool (ETH)
+ * @param tokenB secondary token
+ * @param amountIn This should be in non-gwei format. I.e 1 to represent 1 ETH
+ * @param fee pool fee
+ * @param aForB If true, swaps token A -> token B. 
+ * @returns 
+ */
+async function executeSwap(poolContract: ethers.Contract, tokenA: Token, tokenB: Token, amountIn: string, fee: FeeAmount, aForB: boolean) {
   // aforB = true => input token a and get token b
-  const tokenOutContract = new ethers.Contract(aForB ? tokenB.address : tokenA.address, ERC20_ABI, wallet);
+  const tokenSpend = aForB ? tokenA : tokenB;
+  console.log(`Spend: ${tokenSpend.address}`)
+  const tokenSpentContract = new ethers.Contract(tokenSpend.address, ERC20_ABI, wallet);
+  const amntFormat = ethers.parseUnits(amountIn, tokenSpend.decimals);
 
-  const approval = await tokenOutContract.approve(
+  const txParam = await buildTradeParams(poolContract, tokenSpend, tokenSpend !== tokenA ? tokenA : tokenB, fee, amntFormat.toString(), process.env.WALLET_ADDRESS as string);
+
+  console.log(`Approving send of ${amountIn}`)
+  const approval = await tokenSpentContract.approve(
     UNISWAPROUTER,
-    ethers.parseUnits(amountIn, await tokenOutContract.decimals())
+    amntFormat
   );
-  await approval.wait();
 
+  await approval.wait();
+  console.log("Submitting transaction");
   const tx = await wallet.sendTransaction({
     data: txParam.calldata,
     to: UNISWAPROUTER,
     value: txParam.value
   });
   const receipt = await tx.wait();
-  console.log(receipt);
+  return receipt;
 }
 
 async function main() {
-  console.log("Listening for transactions");
-  await listenTransactions(frontRun);
-    // const addressTokenA = WETH_ADDRESS;
-    // const addressTokenB = AUC_ADDRESS;
-    // const victimAmntIn = ethers.parseEther("0.0005");
-    // const minVictimAmntOut = ethers.parseEther("0.01");
-    // const fee = FeeAmount.HIGH;
+    // console.log("Listening for transactions");
+    // await listenTransactions(frontRun);
+    const addressTokenA = WETH_ADDRESS;
+    const addressTokenB = AUC_ADDRESS;
+    const victimAmntIn = ethers.parseEther("0.0005");
+    const minVictimAmntOut = ethers.parseEther("0.01");
+    const fee = FeeAmount.HIGH;
 
-    // // TODO SUPPORT OTHER POOLS. CAN WE USE IERC-20 TO JUST GET DECIMLS()?
-    // const ContractTokenA = new ethers.Contract(addressTokenA, ERC20_ABI, provider);
-    // const ContractTokenB = new ethers.Contract(addressTokenB, ERC20_ABI, provider);
+    // TODO SUPPORT OTHER POOLS. CAN WE USE IERC-20 TO JUST GET DECIMLS()?
+    const ContractTokenA = new ethers.Contract(addressTokenA, ERC20_ABI, provider);
+    const ContractTokenB = new ethers.Contract(addressTokenB, ERC20_ABI, provider);
 
 
-    // const poolAddress = await getPoolAddress(
-    //   addressTokenA,
-    //   addressTokenB,
-    //   fee,
-    //   provider
-    // );
+    const poolAddress = await getPoolAddress(
+      addressTokenA,
+      addressTokenB,
+      fee,
+      provider
+    );
   
-    // const poolContract = new ethers.Contract(
-    //   poolAddress,
-    //   PoolABI,
-    //   provider
-    // );  
+    const poolContract = new ethers.Contract(
+      poolAddress,
+      PoolABI,
+      provider
+    );  
 
-    // const tokenA = new Token(ChainId.GOERLI, addressTokenA, Number(await ContractTokenA.decimals()));
-    // const tokenB = new Token(ChainId.GOERLI, addressTokenB, Number(await ContractTokenB.decimals()));
- 
+    const tokenA = new Token(ChainId.GOERLI, addressTokenA, Number(await ContractTokenA.decimals()));
+    const tokenB = new Token(ChainId.GOERLI, addressTokenB, Number(await ContractTokenB.decimals()));
+    const recipient = "0xaF9e2959a7520aaD5fe059ED4bcb7ae831e9d6B0";
+    const ok = await executeSwap(poolContract, recipient, tokenA, tokenB, "0.001", FeeAmount.HIGH, false);
+  
+    console.log(ok)
     // const retVal = await simulateAttack(poolContract, tokenA, tokenB, fee, attackBudgetIn, victimAmntIn, minVictimAmntOut);
 }
-
+//0.33648
 main();

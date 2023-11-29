@@ -1,15 +1,10 @@
 import {
   Pool,
-  nearestUsableTick,
-  TickMath,
   FeeAmount,
   TICK_SPACINGS,
   Tick,
-  TickLibrary,
-  mostSignificantBit,
   Route,
   TickListDataProvider,
-  TickDataProvider,
 } from "@uniswap/v3-sdk";
 import TickLensABI from "./contracts/ticklens.json";
 import { SwapRouter, UniswapTrade } from "@uniswap/universal-router-sdk"
@@ -164,7 +159,7 @@ export async function simulateAttack(
   if (vicPurchasedFormat < minVictimOut) {
     console.log("Attacking would exceed slippage. Abort");
     clearLoadedTicks();
-    return 0;
+    return { profit: "0", sellAmount: "0" };
   }
 
   poolSim = result[1];
@@ -182,21 +177,24 @@ export async function simulateAttack(
     `Attacker sells ${attackerPurchasedAmount.toExact()} Token B for ${attackerSoldAmount.toExact()} ETH`
   );
 
-  return attackerSoldAmount.subtract(attackerBuyFormat).toExact();
+  return { 
+    profit: attackerSoldAmount.subtract(attackerBuyFormat).toExact(),
+    sellAmount: victimPurchasedAmount.toExact() 
+  };
 }
 
 export async function buildTradeParams(
   poolContract: ethers.Contract,
-  tokenA: Token,
-  tokenB: Token,
+  inputToken: Token,
+  outputToken: Token,
   fee: FeeAmount,
   amountIn: string,
   recipient: string
 ) {
-  const pool = await getPoolObject(poolContract, tokenA, tokenB, fee);
+  const pool = await getPoolObject(poolContract, inputToken, outputToken, fee);
 
-  const inputAmount = CurrencyAmount.fromRawAmount(tokenA, amountIn);
-  const route = new Route([pool], tokenA, tokenB);
+  const inputAmount = CurrencyAmount.fromRawAmount(inputToken, amountIn);
+  const route = new Route([pool], inputToken, outputToken);
   const trade = await Trade.fromRoute(
     route,
     inputAmount,
