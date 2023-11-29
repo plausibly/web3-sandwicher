@@ -8,6 +8,7 @@ import {
   TICKLENS_ADDRESS,
 } from "./config/info";
 import { ethers } from "ethers";
+import { provider } from "./config/info";
 import UniversalRouter from "./contracts/UniversalRouter.json";
 import WETH_ABI from "./contracts/weth.json";
 import ERC20_ABI from "./contracts/erc20.json";
@@ -19,7 +20,7 @@ import {
 import { ChainId, Token } from "@uniswap/sdk-core";
 // import { simulateAttack } from "./SwapManager";
 import { FeeAmount } from "@uniswap/v3-sdk";
-import { simulateAttack, buildTradeParams, fetchAllTicks } from "./SwapManager";
+import { simulateAttack, buildTradeParams, fetchAllTicks, clearLoadedTicks } from "./SwapManager";
 const {
   abi: PoolABI,
 } = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json");
@@ -46,13 +47,11 @@ interface CandidateTx {
 const web3 = new Web3(process.env.ALCHEMY_WS_URL);
 const routerAbi = new ethers.Interface(UniversalRouter);
 const attackBudgetIn = ethers.parseEther("0.01");
-const provider = new ethers.AlchemyProvider(
-  NETWORK,
-  process.env.ALCHEMY_API_KEY
-);
+
 let FR_LOCK = false;
 
 const tokenInAddr = WETH_ADDRESS;
+const wallet = new ethers.Wallet(process.env.PRIVATE_KEY as string, provider);
 
 /**
  * Decodes function call into the UniversalRouter contract and outputs human readable object
@@ -211,13 +210,13 @@ async function frontRun(swapInfo: UniswapInfo_SwapIn) {
 }
 
 async function checkProfitability(swapInfo: UniswapInfo_SwapIn, poolContract: ethers.Contract) {
+  clearLoadedTicks();
   const addressTokenA = swapInfo.path[0].toLowerCase();
   const addressTokenB = swapInfo.path[1].toLowerCase();
   const victimAmntIn = swapInfo.amountIn;
   const minVictimAmntOut = swapInfo.amountOutMin;
   const fee = Number(swapInfo.fees[0]) as FeeAmount;
 
-  // TODO SUPPORT OTHER POOLS. CAN WE USE IERC-20 TO JUST GET DECIMLS()?
   const ContractTokenA = new ethers.Contract(addressTokenA, ERC20_ABI, provider);
   const ContractTokenB = new ethers.Contract(addressTokenB, ERC20_ABI, provider);
 
@@ -230,13 +229,26 @@ async function checkProfitability(swapInfo: UniswapInfo_SwapIn, poolContract: et
   return retVal;
 }
 
-async function executeSwap(poolContract: ethers.Contract, recipient: string, tokenA: Token, tokenB: Token, amountIn: string, amountOut: string, fee: FeeAmount) {
-  const txParam = await buildTradeParams(poolContract, tokenA, tokenB, fee, amountIn, amountOut, recipient);
 
-  console.log(txParam);
-  // TODO: Approve transfers
-  // TODO: Build
+async function executeSwap(poolContract: ethers.Contract, recipient: string, tokenA: Token, tokenB: Token, amountIn: string, fee: FeeAmount, aForB: boolean) {
+  const txParam = await buildTradeParams(poolContract, tokenA, tokenB, fee, amountIn, recipient);
 
+  // aforB = true => input token a and get token b
+  const tokenOutContract = new ethers.Contract(aForB ? tokenB.address : tokenA.address, ERC20_ABI, wallet);
+
+  const approval = await tokenOutContract.approve(
+    UNISWAPROUTER,
+    ethers.parseUnits(amountIn, await tokenOutContract.decimals())
+  );
+  await approval.wait();
+
+  const tx = await wallet.sendTransaction({
+    data: txParam.calldata,
+    to: UNISWAPROUTER,
+    value: txParam.value
+  });
+  const receipt = await tx.wait();
+  console.log(receipt);
 }
 
 async function main() {

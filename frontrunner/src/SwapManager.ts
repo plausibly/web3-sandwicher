@@ -8,13 +8,14 @@ import {
   TickLibrary,
   mostSignificantBit,
   Route,
-  Trade,
-  SwapRouter,
   TickListDataProvider,
+  TickDataProvider,
 } from "@uniswap/v3-sdk";
 import TickLensABI from "./contracts/ticklens.json";
-
-import { CurrencyAmount, Percent, Token, TradeType } from "@uniswap/sdk-core";
+import { SwapRouter, UniswapTrade } from "@uniswap/universal-router-sdk"
+import {Trade} from "@uniswap/router-sdk"
+import { provider } from "./config/info";
+import { CurrencyAmount, Percent, Token, TradeType, Currency} from "@uniswap/sdk-core";
 import { ethers } from "ethers";
 import JSBI from "jsbi";
 import { NETWORK, TICKLENS_ADDRESS } from "./config/info";
@@ -26,6 +27,8 @@ const BITMAP_FEE_TO_RANGES = {
   10000: [-18, 17],
 };
 
+let TICK_DATA_ARRAY: TickListDataProvider | undefined;
+
 /*
 words per fee tier
 6932  --- 0.01%
@@ -34,6 +37,13 @@ words per fee tier
 35    --- 1%
 TickBtmpRange = {100:(-3466, 3465), 500: (-347, 346), 3000: (-58, 57), 10000: (-18, 17)}
 */
+
+/**
+ * Clear the loaded ticks so we can prep for next transaction.
+ */
+export function clearLoadedTicks() {
+  TICK_DATA_ARRAY = undefined;
+}
 
 /**
  * Get all ticks from the tick bitmap for a given pool. Credits to uniswap discord for helping
@@ -45,10 +55,6 @@ export async function fetchAllTicks(
   poolContract: ethers.Contract,
   fee: FeeAmount
 ) {
-  const provider = new ethers.AlchemyProvider(
-    NETWORK,
-    process.env.ALCHEMY_API_KEY
-  );
   const lensContract = new ethers.Contract(
     TICKLENS_ADDRESS,
     TickLensABI,
@@ -86,10 +92,13 @@ export async function getPoolObject(
   const liquidity = JSBI.BigInt((await poolContract.liquidity()).toString());
   const sqrtPriceX96 = JSBI.BigInt(slot0.sqrtPriceX96.toString());
   const tickSpacing = TICK_SPACINGS[fee];
-  const allTicks = new TickListDataProvider(
-    await fetchAllTicks(poolContract, fee),
-    tickSpacing
-  );
+
+  if (!TICK_DATA_ARRAY) {
+    TICK_DATA_ARRAY = new TickListDataProvider(
+      await fetchAllTicks(poolContract, fee),
+      tickSpacing
+    );
+  }
 
   return new Pool(
     tokenA,
@@ -98,7 +107,7 @@ export async function getPoolObject(
     sqrtPriceX96,
     liquidity,
     Number(slot0.tick),
-    allTicks
+    TICK_DATA_ARRAY
   );
 }
 
@@ -154,6 +163,7 @@ export async function simulateAttack(
   );
   if (vicPurchasedFormat < minVictimOut) {
     console.log("Attacking would exceed slippage. Abort");
+    clearLoadedTicks();
     return 0;
   }
 
@@ -172,7 +182,6 @@ export async function simulateAttack(
     `Attacker sells ${attackerPurchasedAmount.toExact()} Token B for ${attackerSoldAmount.toExact()} ETH`
   );
 
-
   return attackerSoldAmount.subtract(attackerBuyFormat).toExact();
 }
 
@@ -182,33 +191,36 @@ export async function buildTradeParams(
   tokenB: Token,
   fee: FeeAmount,
   amountIn: string,
-  expectedOut: string,
   recipient: string
 ) {
   const pool = await getPoolObject(poolContract, tokenA, tokenB, fee);
 
   const inputAmount = CurrencyAmount.fromRawAmount(tokenA, amountIn);
-  const outputAmount = CurrencyAmount.fromRawAmount(tokenB, expectedOut);
-
   const route = new Route([pool], tokenA, tokenB);
-  const trade = Trade.createUncheckedTrade({
+  const trade = await Trade.fromRoute(
     route,
     inputAmount,
-    outputAmount,
-    tradeType: TradeType.EXACT_INPUT,
-  });
+    TradeType.EXACT_INPUT,
+  );
+  // Get the current time in milliseconds since the Unix epoch
+  const currentTimeMillis = Date.now();
 
-  const deadline = JSBI.BigInt(
-    Math.floor(new Date().getTime() / 1000 + 3600 * 15)
-  ); // expire ~15 mins from now
+  // Calculate the time 15 minutes from now
+  const fifteenMinutesInMillis = 15 * 60 * 1000; // 15 minutes in milliseconds
+  const futureTimeMillis = currentTimeMillis + fifteenMinutesInMillis;
+
+  // Convert the future time to seconds (Epoch time is usually in seconds)
+  const futureTimeInSeconds = Math.floor(futureTimeMillis / 1000);
 
   const options = {
-    slippageTolerance: new Percent(4, 100),
+    slippageTolerance: new Percent(1, 100),
     recipient: recipient,
-    deadline,
+    deadline: futureTimeInSeconds,
   };
 
-  const params = SwapRouter.swapCallParameters([trade], options);
+  const uniswapTrade = new UniswapTrade(trade, options);
 
+  const params = SwapRouter.swapCallParameters(uniswapTrade, options);
+  clearLoadedTicks();
   return params;
 }
