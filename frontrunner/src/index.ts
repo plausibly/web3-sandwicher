@@ -45,7 +45,7 @@ interface CandidateTx {
 
 const web3 = new Web3(process.env.ALCHEMY_WS_URL);
 const routerAbi = new ethers.Interface(UniversalRouter);
-const attackBudgetIn = ethers.parseEther("0.04");
+const attackBudgetIn = ethers.parseEther("0.01");
 const provider = new ethers.AlchemyProvider(
   NETWORK,
   process.env.ALCHEMY_API_KEY
@@ -168,7 +168,7 @@ async function listenTransactions(
         );
         const path = uniswapInfo?.swapInfo?.path;
         if (uniswapInfo && path && path[0] === tokenInAddr.toLowerCase()) {
-          // console.log("Found a swap in transaction: ", uniswapInfo);
+          console.log("Checking transaction: ", uniswapInfo.txHash);
           callback(uniswapInfo?.swapInfo);
         }
       }
@@ -184,7 +184,6 @@ async function frontRun(swapInfo: UniswapInfo_SwapIn) {
     provider
   );
 
-  console.log(poolAddress)
   const poolContract = new ethers.Contract(
     poolAddress,
     PoolABI,
@@ -194,7 +193,7 @@ async function frontRun(swapInfo: UniswapInfo_SwapIn) {
   const totalGas = 0;
   console.log("Frontrun executed ");
   let profit = Number(await checkProfitability(swapInfo, poolContract)); // 14121212312 -> 1.1
-  console.log(`Raw returned porfit: ${profit}`)
+  console.log(`Raw returned profit: ${profit}`)
   profit = profit - totalGas;
   console.log("Total gas: ", totalGas);
   console.log("Profit: ", profit);
@@ -224,6 +223,7 @@ async function checkProfitability(swapInfo: UniswapInfo_SwapIn, poolContract: et
 
   const tokenA = new Token(ChainId.GOERLI, addressTokenA, Number(await ContractTokenA.decimals()));
   const tokenB = new Token(ChainId.GOERLI, addressTokenB, Number(await ContractTokenB.decimals()));
+  console.log(`Checking profitability on a potential transaction`);
  
   const retVal = await simulateAttack(poolContract, tokenA, tokenB, fee, attackBudgetIn, victimAmntIn, minVictimAmntOut);
 

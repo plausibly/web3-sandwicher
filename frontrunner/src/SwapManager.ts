@@ -19,8 +19,6 @@ import { ethers } from "ethers";
 import JSBI from "jsbi";
 import { NETWORK, TICKLENS_ADDRESS } from "./config/info";
 
-let tick_keys = [];
-
 const BITMAP_FEE_TO_RANGES = {
   100: [-3466, 3465],
   500: [-347, 346],
@@ -141,7 +139,7 @@ export async function simulateAttack(
   const attackerPurchasedAmount = result[0];
 
   console.log(
-    `Attacker buys ${attackerPurchasedAmount.toExact()} AUC for ${attackerBuyFormat.toExact()} ETH`
+    `Attacker buys ${attackerPurchasedAmount.toExact()} Token B for ${attackerBuyFormat.toExact()} ETH`
   );
 
   // change pool state after the first buy
@@ -154,14 +152,15 @@ export async function simulateAttack(
     victimPurchasedAmount.toExact(),
     tokenB.decimals
   );
-  // if (vicPurchasedFormat < minVictimOut) {
-  //   return 0;
-  // }
+  if (vicPurchasedFormat < minVictimOut) {
+    console.log("Attacking would exceed slippage. Abort");
+    return 0;
+  }
 
   poolSim = result[1];
 
   console.log(
-    `Victim buys ${victimPurchasedAmount.toExact()} AUC for ${victimBuyFormat.toExact()} ETH`
+    `Victim buys ${victimPurchasedAmount.toExact()} Token B for ${victimBuyFormat.toExact()} ETH`
   );
 
   // How much tokenA if attacker sell tokenB
@@ -170,14 +169,11 @@ export async function simulateAttack(
   poolSim = result[1];
 
   console.log(
-    `Attacker sells ${attackerPurchasedAmount.toExact()} AUC for ${attackerSoldAmount.toExact()} ETH`
+    `Attacker sells ${attackerPurchasedAmount.toExact()} Token B for ${attackerSoldAmount.toExact()} ETH`
   );
 
-  const k = attackerSoldAmount.subtract(attackerBuyFormat).toExact();
 
-  console.log("Profit before returned " + k);
-
-  return k;
+  return attackerSoldAmount.subtract(attackerBuyFormat).toExact();
 }
 
 export async function buildTradeParams(
