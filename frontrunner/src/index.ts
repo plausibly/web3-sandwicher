@@ -15,6 +15,15 @@ import {
   getPriceImpactBySwap,
   swappingEstimator,
 } from "./calc";
+import { ChainId, Token } from "@uniswap/sdk-core";
+// import { simulateAttack } from "./SwapManager";
+import { FeeAmount } from "@uniswap/v3-sdk";
+import { getNextTick, simulateAttack, buildTradeParams } from "./SwapManager";
+import { parse } from "dotenv";
+
+const {
+  abi: PoolABI,
+} = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json");
 
 /* V3_SWAP_EXACT_IN Transaction. */
 interface UniswapInfo_SwapIn {
@@ -41,6 +50,8 @@ const provider = new ethers.AlchemyProvider(
   NETWORK,
   process.env.ALCHEMY_API_KEY
 );
+const wallet = new ethers.Wallet(process.env.PRIVATE_KEY as string, provider);
+
 let FR_LOCK = false;
 
 const tokenInAddr = WETH_ADDRESS;
@@ -239,9 +250,64 @@ async function testPriceImpact(swapInfo: UniswapInfo_SwapIn) {
 
 // swappingEstimator()
 
+async function sendTx(transaction: any) {
+  const tx = await wallet.sendTransaction(transaction);
+  const receipt = await tx.wait();
+  console.log(receipt);
+}
+
 async function main() {
-  await init();
-  await listenTransactions(frontRun);
+  fee = BigInt(10000);
+  tokenOutAddr = AUC_ADDRESS;
+  tokenOutContract = new ethers.Contract(tokenOutAddr, tokenOutABI, wallet);
+  decimalsOut = await tokenOutContract.decimals();
+  poolAddress = await getPoolAddress(tokenInAddr, tokenOutAddr, fee, provider);
+  decimalsIn = await tokenInContract.decimals();
+  decimalsOut = await tokenOutContract.decimals();
+  const poolContract = new ethers.Contract(poolAddress, PoolABI, provider);
+  const tokenA = new Token(ChainId.GOERLI, tokenInAddr, Number(decimalsIn));
+  const tokenB = new Token(ChainId.GOERLI, tokenOutAddr, Number(decimalsOut));
+  const fees = Number(10000) as FeeAmount;
+
+  const methodParameters = await buildTradeParams(
+    poolContract,
+    tokenB,
+    tokenA,
+    fees,
+    ethers.parseUnits("100", decimalsOut).toString(),
+    ethers.parseUnits("0.0339928", decimalsIn).toString(),
+    process.env.WALLET_ADDRESS as string
+  );
+    console.log(methodParameters)
+  const x = decodeData(
+    methodParameters.calldata,
+    BigInt(methodParameters.value),
+    process.env.WALLET_ADDRESS as string,
+    "",
+    "0"
+  );
+  console.log(x);
+  // //approve 100 auc to router
+  // const approval = await tokenOutContract.approve(
+  //   UNISWAPROUTER,
+  //   ethers.parseUnits("100", decimalsOut)
+  // );
+  // const receipt = await approval.wait();
+  // console.log(receipt);
+  // // Define the gas price and limit
+  // const gasPrice = ethers.parseUnits("30", "gwei"); // Replace with your desired gas price
+  // const gasLimit = 24000; // Replace with your desired gas limit
+
+  // const tx = {
+  //   data: methodParameters.calldata,
+  //   to: UNISWAPROUTER,
+  //   value: methodParameters.value,
+  //   gasPrice: gasPrice,
+  //   gasLimit: gasLimit,
+  // };
+  // await sendTx(tx);
+  // await init();
+  // await listenTransactions(frontRun);
 }
 
 main();
