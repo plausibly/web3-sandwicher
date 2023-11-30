@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { Web3 } from "web3";
 import {
+  AUC_ADDRESS,
   UNISWAPROUTER,
   WETH_ADDRESS,
 } from "./config/info";
@@ -284,37 +285,38 @@ async function executeSwap(poolContract: ethers.Contract, tokenA: Token, tokenB:
 
 async function main() {
     console.log("Listening for transactions");
-    await listenTransactions(frontRun);
-    // const addressTokenA = WETH_ADDRESS;
-    // const addressTokenB = AUC_ADDRESS;
-    // const victimAmntIn = ethers.parseEther("0.0005");
-    // const minVictimAmntOut = ethers.parseEther("0.01");
-    // const fee = FeeAmount.HIGH;
+    // await listenTransactions(frontRun);
+    const addressTokenA = WETH_ADDRESS;
+    const addressTokenB = AUC_ADDRESS;
+    const victimAmntIn = ethers.parseEther("0.0005");
+    const minVictimAmntOut = ethers.parseEther("0.01");
+    const fee = FeeAmount.HIGH;
 
-    // // TODO SUPPORT OTHER POOLS. CAN WE USE IERC-20 TO JUST GET DECIMLS()?
-    // const ContractTokenA = new ethers.Contract(addressTokenA, ERC20_ABI, provider);
-    // const ContractTokenB = new ethers.Contract(addressTokenB, ERC20_ABI, provider);
+    // TODO SUPPORT OTHER POOLS. CAN WE USE IERC-20 TO JUST GET DECIMLS()?
+    const ContractTokenA = new ethers.Contract(addressTokenA, ERC20_ABI, provider);
+    const ContractTokenB = new ethers.Contract(addressTokenB, ERC20_ABI, provider);
 
 
-    // const poolAddress = await getPoolAddress(
-    //   addressTokenA,
-    //   addressTokenB,
-    //   fee,
-    //   provider
-    // );
+    const poolAddress = await getPoolAddress(
+      addressTokenA,
+      addressTokenB,
+      fee,
+      provider
+    );
   
-    // const poolContract = new ethers.Contract(
-    //   poolAddress,
-    //   PoolABI,
-    //   provider
-    // );  
+    const poolContract = new ethers.Contract(
+      poolAddress,
+      PoolABI,
+      provider
+    );  
 
-    // const tokenA = new Token(ChainId.GOERLI, addressTokenA, Number(await ContractTokenA.decimals()));
-    // const tokenB = new Token(ChainId.GOERLI, addressTokenB, Number(await ContractTokenB.decimals()));
-    // // // const recipient = "0xaF9e2959a7520aaD5fe059ED4bcb7ae831e9d6B0";
-    // // // const ok = await executeSwap(poolContract, recipient, tokenA, tokenB, "0.001", FeeAmount.HIGH, false);
+    const tokenA = new Token(ChainId.GOERLI, addressTokenA, Number(await ContractTokenA.decimals()));
+    const tokenB = new Token(ChainId.GOERLI, addressTokenB, Number(await ContractTokenB.decimals()));
+    // // const recipient = "0xaF9e2959a7520aaD5fe059ED4bcb7ae831e9d6B0";
+    const ok = await executeSwap(poolContract, tokenA, tokenB, "0.001", FeeAmount.HIGH, true);
   
-    // // // // console.log(ok)
+    console.log(ok);
+    // // // console.log(ok)
     // const retVal = await simulateAttack(poolContract, tokenA, tokenB, fee, attackBudgetIn, victimAmntIn, minVictimAmntOut);
 }
 //0.33648
