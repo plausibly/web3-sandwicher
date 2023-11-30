@@ -430,8 +430,11 @@ async function demo() {
   );
 
   const poolContract = new ethers.Contract(poolAddress, PoolABI, provider);
+  const attackBudgetUnformat = "0.0001";
+  const attackBudgetIn = ethers.parseEther(attackBudgetUnformat);
   const victimAmntIn = ethers.parseUnits("0.001", weth_decimals);
   const minVictimAmntOut = ethers.parseUnits("0", auc_decimals);
+
   const WETH_token = new Token(
     ChainId.GOERLI,
     WETH_ADDRESS,
@@ -452,6 +455,7 @@ async function demo() {
     victimAmntIn,
     minVictimAmntOut
   );
+  console.log(`Raw returned profit: ${retVal.profit}`);
 }
 
 demo();
