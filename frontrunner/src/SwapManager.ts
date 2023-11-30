@@ -7,13 +7,20 @@ import {
   TickListDataProvider,
 } from "@uniswap/v3-sdk";
 import TickLensABI from "./contracts/ticklens.json";
-import { SwapRouter, UniswapTrade } from "@uniswap/universal-router-sdk"
-import {Trade} from "@uniswap/router-sdk"
+import { SwapRouter, UniswapTrade } from "@uniswap/universal-router-sdk";
+import { Trade } from "@uniswap/router-sdk";
 import { provider } from "./config/info";
-import { CurrencyAmount, Percent, Token, TradeType, Currency} from "@uniswap/sdk-core";
+import {
+  CurrencyAmount,
+  Percent,
+  Token,
+  TradeType,
+  Currency,
+} from "@uniswap/sdk-core";
 import { ethers } from "ethers";
 import JSBI from "jsbi";
 import { NETWORK, TICKLENS_ADDRESS } from "./config/info";
+import { Q96toPrice } from "./calc";
 
 const BITMAP_FEE_TO_RANGES = {
   100: [-3466, 3465],
@@ -42,8 +49,8 @@ export function clearLoadedTicks() {
 
 /**
  * Get all ticks from the tick bitmap for a given pool. Credits to uniswap discord for helping
- * @param poolContract 
- * @param fee 
+ * @param poolContract
+ * @param fee
  * @returns List of tick objects
  */
 export async function fetchAllTicks(
@@ -128,7 +135,14 @@ export async function simulateAttack(
   minVictimOut: bigint
 ) {
   let poolSim = await getPoolObject(poolContract, tokenA, tokenB, fee);
-
+  console.log(
+    "Current spot price: " +
+      Q96toPrice(
+        BigInt(poolSim.sqrtRatioX96.toString()),
+        BigInt(tokenA.decimals),
+        BigInt(tokenB.decimals)
+      )
+  );
   const attackerBuyFormat = CurrencyAmount.fromRawAmount(
     tokenA,
     attackerInput.toString()
@@ -149,6 +163,13 @@ export async function simulateAttack(
   // change pool state after the first buy
   poolSim = result[1];
 
+  const spotPriceAfterAttackerBuy = Q96toPrice(
+    BigInt(poolSim.sqrtRatioX96.toString()),
+    BigInt(tokenA.decimals),
+    BigInt(tokenB.decimals)
+  );
+  console.log(`Spot price after attacker buys: ${spotPriceAfterAttackerBuy}`);
+
   result = await poolSim.getOutputAmount(victimBuyFormat);
   //TODO how to compare Currency with BIgiNt?
   const victimPurchasedAmount = result[0];
@@ -167,6 +188,12 @@ export async function simulateAttack(
   console.log(
     `Victim buys ${victimPurchasedAmount.toExact()} Token B for ${victimBuyFormat.toExact()} ETH`
   );
+  const spotPriceAfterVictimBuy = Q96toPrice(
+    BigInt(poolSim.sqrtRatioX96.toString()),
+    BigInt(tokenA.decimals),
+    BigInt(tokenB.decimals)
+  );
+  console.log(`Spot price after victim buys: ${spotPriceAfterVictimBuy}`);
 
   // How much tokenA if attacker sell tokenB
   result = await poolSim.getOutputAmount(attackerPurchasedAmount);
@@ -179,7 +206,7 @@ export async function simulateAttack(
 
   return {
     profit: attackerSoldAmount.subtract(attackerBuyFormat).toExact(),
-    sellAmount: victimPurchasedAmount.toExact() 
+    sellAmount: attackerPurchasedAmount.toExact(),
   };
 }
 
@@ -198,7 +225,7 @@ export async function buildTradeParams(
   const trade = await Trade.fromRoute(
     route,
     inputAmount,
-    TradeType.EXACT_INPUT,
+    TradeType.EXACT_INPUT
   );
   // Get the current time in milliseconds since the Unix epoch
   const currentTimeMillis = Date.now();
@@ -211,7 +238,7 @@ export async function buildTradeParams(
   const futureTimeInSeconds = Math.floor(futureTimeMillis / 1000);
 
   const options = {
-    slippageTolerance: new Percent(1, 100),
+    slippageTolerance: new Percent(50, 100),
     recipient: recipient,
     deadline: futureTimeInSeconds,
   };

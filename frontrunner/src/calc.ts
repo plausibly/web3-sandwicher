@@ -76,7 +76,7 @@ export async function getPoolAddress(
   return poolAddress;
 }
 
-function Q96toPrice(q96: bigint, decimals0: bigint, decimals1: bigint): number {
+export function Q96toPrice(q96: bigint, decimals0: bigint, decimals1: bigint): number {
   let mathPrice = Number(q96) ** 2 / 2 ** 192;
   const decimalAdjustment = 10 ** (Number(decimals0) - Number(decimals1));
   const price = mathPrice * decimalAdjustment;
