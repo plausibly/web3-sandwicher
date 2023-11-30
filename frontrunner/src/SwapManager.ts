@@ -171,7 +171,7 @@ export async function simulateAttack(
   console.log(`Spot price after attacker buys: ${spotPriceAfterAttackerBuy}`);
 
   result = await poolSim.getOutputAmount(victimBuyFormat);
-  //TODO how to compare Currency with BIgiNt?
+
   const victimPurchasedAmount = result[0];
   const vicPurchasedFormat = ethers.parseUnits(
     victimPurchasedAmount.toExact(),

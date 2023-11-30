@@ -273,8 +273,8 @@ async function frontRun(txData: CandidateTx) {
     //   console.error(e);
     // }
 
-    FR_LOCK = false;
   }
+  FR_LOCK = false;
 
   return;
 }
@@ -387,7 +387,6 @@ async function main() {
   // const minVictimAmntOut = ethers.parseEther("0.01");
   // const fee = FeeAmount.HIGH;
 
-  // // TODO SUPPORT OTHER POOLS. CAN WE USE IERC-20 TO JUST GET DECIMLS()?
   // const ContractTokenA = new ethers.Contract(addressTokenA, ERC20_ABI, provider);
   // const ContractTokenB = new ethers.Contract(addressTokenB, ERC20_ABI, provider);
 
