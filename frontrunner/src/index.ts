@@ -458,4 +458,5 @@ async function demo() {
   console.log(`Raw returned profit: ${retVal.profit}`);
 }
 
-demo();
+// demo();
+main();
