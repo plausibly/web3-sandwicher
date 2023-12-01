@@ -9,7 +9,7 @@ ALCHEMY_API_KEY=<ALCHEMY API>
 PRIVATE_KEY=<WALLET PRIVATE>
 WALLET_ADDRESS=<WALLET ADDRESS>
 
-Run with `npx ts-node src/index.ts` to scan tx prices
+Run with `npx ts-node src/index.ts` to scan tx prices, only filters for V3 swaps in. 
 
 Quoting / Swap logic / tx builder (disabled) in `SwapManager`
 Listener / Tx sender (disabled) in `index.ts`

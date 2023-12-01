@@ -161,8 +161,7 @@ async function listenTransactions(callback: (txData: CandidateTx) => void) {
           uniswapInfo &&
           path &&
           path[0] === tokenInAddr.toLowerCase() &&
-          fees &&
-          fees[0] === BigInt(FeeAmount.HIGH)
+          fees
         ) {
           if (!FR_LOCK) {
             FR_LOCK = true;
