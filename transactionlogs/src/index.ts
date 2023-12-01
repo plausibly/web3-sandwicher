@@ -3,7 +3,7 @@ import { abi as PoolABI } from "@uniswap/v3-core/artifacts/contracts//UniswapV3P
 import { abi as FactoryABI } from "@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json";
 import { UNISWAPROUTER, WETH_ADDRESS, AUC_ADDRESS, FACTORY_ADDRESS } from "./config/info";
 import { EventLog, ethers } from "ethers";
-import WETH_ABI from "./contracts/WETH.json";
+import WETH_ABI from "./contracts/weth.json";
 import AUC_ABI from "./contracts/erc20.json";
 
 interface track_data {
